@@ -1,104 +1,153 @@
-import { useState } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
+
 import { auth, db } from "../lib/firebaseClient";
+import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 
-export default function Register() {
+export default function RegisterPage() {
+  const router = useRouter();
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [personalNumber, setPersonalNumber] = useState("");
-  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
 
-  const onSubmit = async (e) => {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const canSubmit = useMemo(() => {
+    return (
+      firstName.trim().length >= 2 &&
+      lastName.trim().length >= 2 &&
+      personalNumber.trim().length >= 3 &&
+      email.trim().length >= 5
+    );
+  }, [firstName, lastName, personalNumber, email]);
+
+  async function handleRegister(e) {
     e.preventDefault();
-    setStatus("");
+    setMsg("");
 
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    const pn = personalNumber.trim();
+    const em = email.trim().toLowerCase();
+
+    setLoading(true);
     try {
-      // 1. Создаём пользователя в Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      // Пароль = email (как у тебя сейчас)
+      const cred = await createUserWithEmailAndPassword(auth, em, em);
+      const uid = cred.user.uid;
 
-      const uid = userCredential.user.uid;
-
-      // 2. Записываем профиль в Firestore
-      await setDoc(doc(db, "users", uid), {
-        personalNumber,
-        fullName,
-        email,
-        role: "worker", // по умолчанию
+      // Создаем профиль только при явной регистрации
+      await setDoc(doc(db, "Users", uid), {
+        email: em,
+        personalNumber: pn,
+        firstName: fn,
+        lastName: ln,
+        role: "worker",
+        status: "pending",
         createdAt: serverTimestamp(),
       });
 
-      setStatus("Регистрация успешна.");
+      // Можно разлогинить сразу и показать "ожидайте подтверждения"
+      await signOut(auth);
+
+      router.push("/login?registered=1");
     } catch (err) {
-      setStatus("Ошибка регистрации: " + err.message);
+      setMsg(err?.message || "Ошибка регистрации");
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
   return (
-    <div style={styles.page}>
+    <main style={styles.page}>
       <div style={styles.card}>
-        <h2>Регистрация</h2>
+        <h1 style={styles.h1}>Регистрация</h1>
+        <div style={styles.sub}>После регистрации директор или администратор активируют аккаунт.</div>
 
-        <form onSubmit={onSubmit}>
-          <label>Личный номер</label>
-          <input
-            value={personalNumber}
-            onChange={(e) => setPersonalNumber(e.target.value)}
-            required
-          />
+        <form onSubmit={handleRegister} style={{ marginTop: 14 }}>
+          <label style={styles.label}>Имя</label>
+          <input style={styles.input} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
 
-          <label>Имя и фамилия (латиницей)</label>
-          <input
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-          />
+          <label style={styles.label}>Фамилия</label>
+          <input style={styles.input} value={lastName} onChange={(e) => setLastName(e.target.value)} />
 
-          <label>E-mail</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+          <label style={styles.label}>Личный номер</label>
+          <input style={styles.input} value={personalNumber} onChange={(e) => setPersonalNumber(e.target.value)} />
 
-          <label>Пароль</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <label style={styles.label}>E-mail</label>
+          <input style={styles.input} value={email} onChange={(e) => setEmail(e.target.value)} />
 
-          <button type="submit">Зарегистрироваться</button>
+          <button
+            type="submit"
+            style={{ ...styles.btn, opacity: canSubmit && !loading ? 1 : 0.6 }}
+            disabled={!canSubmit || loading}
+          >
+            {loading ? "Создание..." : "Зарегистрироваться"}
+          </button>
+
+          {msg ? <div style={styles.msg}>{msg}</div> : null}
+
+          <div style={{ marginTop: 12 }}>
+            <Link href="/login" style={styles.back}>← Назад к входу</Link>
+          </div>
         </form>
-
-        {status && <div style={{ marginTop: 10 }}>{status}</div>}
       </div>
-    </div>
+    </main>
   );
 }
 
 const styles = {
   page: {
     minHeight: "100vh",
-    display: "grid",
-    placeItems: "center",
-    background: "#f5f6f8",
+    display: "flex",
+    justifyContent: "center",
+    padding: 24,
+    background: "#f5f7fb",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
   },
   card: {
-    width: 400,
-    padding: 30,
+    width: "100%",
+    maxWidth: 520,
     background: "#fff",
-    borderRadius: 12,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
   },
+  h1: { margin: 0, fontSize: 30 },
+  sub: { color: "#64748b", marginTop: 6, lineHeight: 1.4 },
+  label: { display: "block", fontWeight: 700, color: "#111827", marginTop: 10 },
+  input: {
+    width: "100%",
+    marginTop: 6,
+    padding: "12px 12px",
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    outline: "none",
+    fontSize: 16,
+  },
+  btn: {
+    width: "100%",
+    marginTop: 14,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: "#1d4ed8",
+    color: "#fff",
+    fontWeight: 800,
+    fontSize: 16,
+    cursor: "pointer",
+  },
+  msg: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    background: "#f1f5f9",
+    color: "#0f172a",
+  },
+  back: { color: "#1e40af", textDecoration: "none", fontWeight: 700 },
 };
