@@ -34,12 +34,9 @@ export default function Home() {
             </p>
 
             <div style={styles.ctaRow} id="cta">
-              <button
-                style={styles.ctaBtn}
-                onClick={() => alert("Пока тестовая страница. Экран входа подключим следующим шагом.")}
-              >
-                Войти
-              </button>
+              <a href="/login" style={styles.ctaBtn}>
+  Войти
+</a>
               <a style={styles.secondaryBtn} href="#features">
                 Посмотреть функции
               </a>
