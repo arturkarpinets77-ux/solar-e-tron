@@ -8,7 +8,6 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
-  signOut,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -34,11 +33,6 @@ export default function LoginPage() {
     e.preventDefault();
     setMsg("");
 
-    if (!auth || !db) {
-      setMsg("Firebase ещё не инициализирован. Обновите страницу и попробуйте снова.");
-      return;
-    }
-
     const pn = personalNumber.trim();
     const em = email.trim().toLowerCase();
 
@@ -49,22 +43,23 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // "Запомнить меня"
+      // Persist зависит от чекбокса "Запомнить меня"
       await setPersistence(
         auth,
         remember ? browserLocalPersistence : browserSessionPersistence
       );
 
-      // ВАЖНО: у вас пароль = email
+      // ВАЖНО: по вашей логике пароль = email
       const cred = await signInWithEmailAndPassword(auth, em, em);
 
-      // Профиль должен УЖЕ существовать в Firestore (ничего не создаём автоматически)
+      // Проверка профиля в Firestore: Users/{uid}
       const uid = cred.user.uid;
       const snap = await getDoc(doc(db, "Users", uid));
 
+      // Если нет документа профиля — считаем, что пользователь "не зарегистрирован"
       if (!snap.exists()) {
-        await signOut(auth);
-        setMsg("Пользователь не зарегистрирован. Нажмите «Регистрация» и пройдите регистрацию.");
+        await auth.signOut();
+        setMsg("Пользователь не зарегистрирован. Нажмите «Регистрация».");
         return;
       }
 
@@ -74,16 +69,22 @@ export default function LoginPage() {
       const dbPN = String(data.personalNumber || "").trim();
       const status = String(data.status || "").trim().toLowerCase();
 
-      // Пользователь должен быть активирован директором или администратором
-      if (status !== "active") {
-        await signOut(auth);
-        setMsg("Пользователь ещё не активирован. Дождитесь подтверждения директора или администратора.");
+      // Статусы
+      if (status === "pending") {
+        await auth.signOut();
+        setMsg("Профиль ожидает подтверждения директором или администратором.");
         return;
       }
 
-      // Доп.проверка соответствия введённых данных профилю
+      if (status && status !== "active") {
+        await auth.signOut();
+        setMsg("Профиль не активен. Обратитесь к директору или администратору.");
+        return;
+      }
+
+      // Проверяем совпадение данных
       if (dbEmail !== em || dbPN !== pn) {
-        await signOut(auth);
+        await auth.signOut();
         setMsg("Неверный личный номер или e-mail.");
         return;
       }
@@ -91,12 +92,17 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err) {
       const code = err?.code || "";
-      if (code.includes("auth/invalid-credential") || code.includes("auth/wrong-password")) {
-        setMsg("Неверный e-mail или пароль.");
-      } else if (code.includes("auth/user-not-found")) {
-        setMsg("Пользователь не найден.");
+      const text = err?.message || "Ошибка входа";
+
+      // Если пользователя нет в Firebase Auth
+      if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+        setMsg("Пользователь не зарегистрирован. Нажмите «Регистрация».");
+      } else if (code === "auth/wrong-password") {
+        setMsg("Неверный пароль.");
+      } else if (code === "auth/too-many-requests") {
+        setMsg("Слишком много попыток. Попробуйте позже.");
       } else {
-        setMsg(err?.message || "Ошибка входа");
+        setMsg(text);
       }
     } finally {
       setLoading(false);
@@ -115,8 +121,6 @@ export default function LoginPage() {
             style={styles.input}
             placeholder="Например: 1234567"
             value={personalNumber}
-            inputMode="numeric"
-            autoComplete="off"
             onChange={(e) => setPersonalNumber(e.target.value)}
           />
 
@@ -125,8 +129,6 @@ export default function LoginPage() {
             style={styles.input}
             placeholder="name@example.com"
             value={email}
-            type="email"
-            autoComplete="email"
             onChange={(e) => setEmail(e.target.value)}
           />
 
@@ -151,8 +153,8 @@ export default function LoginPage() {
             {loading ? "Вход..." : "Войти"}
           </button>
 
-          <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/register" style={styles.linkBtn}>
+          <div style={{ marginTop: 10, display: "flex", gap: 12 }}>
+            <Link href="/register" style={styles.registerBtn}>
               Регистрация
             </Link>
 
@@ -214,21 +216,21 @@ const styles = {
     fontWeight: 800,
     fontSize: 16,
   },
+  registerBtn: {
+    display: "inline-block",
+    padding: "10px 12px",
+    borderRadius: 12,
+    background: "#e5e7eb",
+    color: "#111827",
+    textDecoration: "none",
+    fontWeight: 800,
+  },
   msg: {
-    marginTop: 14,
+    marginTop: 12,
     padding: 10,
     borderRadius: 12,
     background: "#f1f5f9",
     color: "#0f172a",
-    lineHeight: 1.4,
   },
   back: { color: "#1e40af", textDecoration: "none", fontWeight: 700 },
-  linkBtn: {
-    color: "#1e40af",
-    textDecoration: "none",
-    fontWeight: 800,
-    background: "#eef2ff",
-    padding: "10px 12px",
-    borderRadius: 12,
-  },
 };
