@@ -70,6 +70,9 @@ export default function Login() {
           <button type="submit" style={styles.button}>
             Войти
           </button>
+<div style={{ marginTop: 10 }}>
+  Нет аккаунта? <a href="/register">Регистрация</a>
+</div>
 
           {status ? <div style={styles.status}>{status}</div> : null}
 
