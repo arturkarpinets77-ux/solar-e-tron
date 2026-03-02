@@ -9,91 +9,113 @@ import { doc, getDoc } from "firebase/firestore";
 export default function DashboardPage() {
   const router = useRouter();
 
-  const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
+  const [profile, setProfile] = useState(null);
 
   useEffect(() => {
+    if (!auth || !db) return;
+
     const unsub = onAuthStateChanged(auth, async (user) => {
+      setMsg("");
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
-      const snap = await getDoc(doc(db, "Users", user.uid));
+      try {
+        const snap = await getDoc(doc(db, "Users", user.uid));
+        if (!snap.exists()) {
+          await signOut(auth);
+          router.replace("/login");
+          return;
+        }
 
-      if (!snap.exists()) {
-        router.push("/login");
-        return;
+        const data = snap.data() || {};
+
+        // --- ВАЖНО: берём имя/фамилию из firstName/lastName
+        // и делаем fallback на возможные старые поля
+        const firstName =
+          String(data.firstName || "").trim() ||
+          String(data.name || "").trim() ||
+          "";
+
+        const lastName =
+          String(data.lastName || "").trim() ||
+          String(data.surname || "").trim() ||
+          "";
+
+        // Если вдруг использовалось fullName:
+        let fullName = String(data.fullName || "").trim();
+        if (!fullName && (firstName || lastName)) {
+          fullName = `${firstName} ${lastName}`.trim();
+        }
+
+        setProfile({
+          email: String(data.email || user.email || "").trim(),
+          personalNumber: String(data.personalNumber || "").trim(),
+          role: String(data.role || "").trim(),
+          status: String(data.status || "").trim(),
+          firstName,
+          lastName,
+          fullName,
+        });
+      } catch (e) {
+        setMsg(e?.message || "Ошибка загрузки профиля");
+      } finally {
+        setLoading(false);
       }
-
-      const data = snap.data();
-
-      if (String(data.status) !== "active") {
-        router.push("/login");
-        return;
-      }
-
-      setUserData({
-        uid: user.uid,
-        ...data,
-      });
-
-      setLoading(false);
     });
 
     return () => unsub();
   }, [router]);
 
   async function handleLogout() {
-    await signOut(auth);
-    router.push("/");
+    try {
+      await signOut(auth);
+      router.replace("/");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка выхода");
+    }
   }
 
-  if (loading) return <div style={{ padding: 24 }}>Загрузка...</div>;
+  if (loading) {
+    return (
+      <main style={styles.page}>
+        <div style={styles.card}>Загрузка...</div>
+      </main>
+    );
+  }
 
-  const {
-    firstName,
-    lastName,
-    email,
-    personalNumber,
-    role,
-    status,
-  } = userData;
-
-  const isPrivileged = role === "admin" || role === "director";
+  if (!profile) {
+    return (
+      <main style={styles.page}>
+        <div style={styles.card}>Профиль не найден</div>
+      </main>
+    );
+  }
 
   return (
     <main style={styles.page}>
       <div style={styles.card}>
         <h1 style={styles.h1}>Кабинет</h1>
 
-        <div style={styles.infoBox}>
-          <div><b>Имя:</b> {firstName || "-"}</div>
-          <div><b>Фамилия:</b> {lastName || "-"}</div>
-          <div><b>E-mail:</b> {email}</div>
-          <div><b>Личный номер:</b> {personalNumber}</div>
-          <div><b>Роль:</b> {role}</div>
-          <div><b>Статус:</b> {status}</div>
+        <div style={styles.box}>
+          <div><b>Имя:</b> {profile.firstName || "-"}</div>
+          <div><b>Фамилия:</b> {profile.lastName || "-"}</div>
+          <div><b>E-mail:</b> {profile.email || "-"}</div>
+          <div><b>Личный номер:</b> {profile.personalNumber || "-"}</div>
+          <div><b>Роль:</b> {profile.role || "-"}</div>
+          <div><b>Статус:</b> {profile.status || "-"}</div>
         </div>
 
-        <div style={styles.actions}>
-          <Link href="/workday" style={styles.actionBtn}>
-            Отметка рабочего дня
-          </Link>
+        {msg ? <div style={styles.msg}>{msg}</div> : null}
 
-          {isPrivileged && (
-            <Link href="/admin/users" style={styles.actionBtnGreen}>
-              Подтверждение пользователей
-            </Link>
-          )}
-        </div>
-
-        <div style={{ marginTop: 20 }}>
-          <button onClick={handleLogout} style={styles.logoutBtn}>
+        <div style={{ marginTop: 14 }}>
+          <button onClick={handleLogout} style={styles.btnSecondary}>
             Выйти
           </button>
-
-          <Link href="/" style={styles.homeLink}>
+          <Link href="/" style={styles.link}>
             На главную
           </Link>
         </div>
@@ -113,56 +135,35 @@ const styles = {
   },
   card: {
     width: "100%",
-    maxWidth: 600,
+    maxWidth: 760,
     background: "#fff",
     borderRadius: 16,
     padding: 24,
     boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
   },
-  h1: { margin: 0, fontSize: 32 },
-  infoBox: {
-    marginTop: 16,
+  h1: { margin: 0, fontSize: 34 },
+  box: {
+    marginTop: 14,
     padding: 16,
     borderRadius: 12,
     border: "1px solid #e5e7eb",
+    background: "#fafafa",
     lineHeight: 1.8,
   },
-  actions: {
-    marginTop: 18,
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  },
-  actionBtn: {
-    padding: "12px 14px",
+  msg: {
+    marginTop: 12,
+    padding: 10,
     borderRadius: 12,
-    textDecoration: "none",
-    background: "#1d4ed8",
-    color: "#fff",
-    fontWeight: 800,
-    textAlign: "center",
+    background: "#f1f5f9",
+    color: "#0f172a",
   },
-  actionBtnGreen: {
-    padding: "12px 14px",
-    borderRadius: 12,
-    textDecoration: "none",
-    background: "#16a34a",
-    color: "#fff",
-    fontWeight: 800,
-    textAlign: "center",
-  },
-  logoutBtn: {
-    padding: "10px 12px",
+  btnSecondary: {
+    padding: "10px 14px",
     borderRadius: 10,
-    border: "1px solid #e5e7eb",
+    border: "1px solid #cbd5e1",
     background: "#fff",
-    fontWeight: 700,
     cursor: "pointer",
+    marginRight: 14,
   },
-  homeLink: {
-    marginLeft: 14,
-    color: "#1e40af",
-    textDecoration: "none",
-    fontWeight: 700,
-  },
+  link: { color: "#1e40af", textDecoration: "none", fontWeight: 700 },
 };
