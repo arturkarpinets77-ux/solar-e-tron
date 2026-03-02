@@ -1,154 +1,194 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
 
-export default function Login() {
+import { auth, db } from "../lib/firebaseClient";
+import {
+  signInWithEmailAndPassword,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+} from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+
+export default function LoginPage() {
+  const router = useRouter();
+
   const [personalNumber, setPersonalNumber] = useState("");
   const [email, setEmail] = useState("");
   const [remember, setRemember] = useState(true);
-  const [status, setStatus] = useState("");
 
-  const onSubmit = (e) => {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const canSubmit = useMemo(() => {
+    return personalNumber.trim().length > 0 && email.trim().length > 3;
+  }, [personalNumber, email]);
+
+  useEffect(() => {
+    setMsg("");
+  }, [personalNumber, email, remember]);
+
+  async function handleLogin(e) {
     e.preventDefault();
+    setMsg("");
 
     const pn = personalNumber.trim();
-    const em = email.trim();
+    const em = email.trim().toLowerCase();
 
-    if (!pn) return setStatus("Введите личный номер.");
-    if (!em) return setStatus("Введите e-mail.");
-
-    // Пока тест: сохраняем локально только если включено "Запомнить меня"
-    if (remember) {
-      localStorage.setItem("auth_personalNumber", pn);
-      localStorage.setItem("auth_email", em);
-      localStorage.setItem("auth_remember", "1");
-    } else {
-      localStorage.removeItem("auth_personalNumber");
-      localStorage.removeItem("auth_email");
-      localStorage.removeItem("auth_remember");
+    if (!pn || !em) {
+      setMsg("Заполните личный номер и e-mail.");
+      return;
     }
 
-    setStatus("Готово. Дальше подключим реальную авторизацию.");
-  };
+    setLoading(true);
+    try {
+      // Persist зависит от чекбокса "Запомнить меня"
+      await setPersistence(
+        auth,
+        remember ? browserLocalPersistence : browserSessionPersistence
+      );
+
+      // ВАЖНО: по вашей логике пароль = email
+      const cred = await signInWithEmailAndPassword(auth, em, em);
+
+      // Проверка профиля в Firestore: Users/{uid}
+      const uid = cred.user.uid;
+      const snap = await getDoc(doc(db, "Users", uid));
+
+      if (!snap.exists()) {
+        await auth.signOut();
+        throw new Error("Профиль пользователя не найден в базе (Users/{uid}).");
+      }
+
+      const data = snap.data();
+
+      const dbEmail = String(data.email || "").trim().toLowerCase();
+      const dbPN = String(data.personalNumber || "").trim();
+      const status = String(data.status || "").trim().toLowerCase();
+
+      if (status && status !== "active") {
+        await auth.signOut();
+        throw new Error("Пользователь не активен (status).");
+      }
+
+      if (dbEmail !== em || dbPN !== pn) {
+        await auth.signOut();
+        throw new Error("Неверный личный номер или e-mail.");
+      }
+
+      router.push("/dashboard");
+    } catch (err) {
+      setMsg(err?.message || "Ошибка входа");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div style={styles.page}>
+    <main style={styles.page}>
       <div style={styles.card}>
-        <div style={styles.header}>
-          <div style={styles.title}>Вход</div>
-          <div style={styles.subTitle}>Solar E-Tron</div>
-        </div>
+        <h1 style={styles.h1}>Вход</h1>
+        <div style={styles.sub}>Solar E-Tron</div>
 
-        <form onSubmit={onSubmit} style={styles.form}>
+        <form onSubmit={handleLogin} style={{ marginTop: 14 }}>
           <label style={styles.label}>Личный номер</label>
           <input
+            style={styles.input}
+            placeholder="Например: 1234567"
             value={personalNumber}
             onChange={(e) => setPersonalNumber(e.target.value)}
-            placeholder="Например: 1234567"
-            style={styles.input}
-            inputMode="numeric"
-            autoComplete="username"
           />
 
-          <label style={styles.label}>E-mail</label>
+          <label style={{ ...styles.label, marginTop: 10 }}>E-mail</label>
           <input
+            style={styles.input}
+            placeholder="name@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-            style={styles.input}
-            type="email"
-            autoComplete="email"
           />
 
-          <label style={styles.rememberRow}>
+          <label style={styles.checkboxRow}>
             <input
               type="checkbox"
               checked={remember}
               onChange={(e) => setRemember(e.target.checked)}
             />
-            <span style={styles.rememberText}>Запомнить меня</span>
+            <span style={{ marginLeft: 8 }}>Запомнить меня</span>
           </label>
 
-          <button type="submit" style={styles.button}>
-            Войти
+          <button
+            type="submit"
+            style={{
+              ...styles.btn,
+              opacity: canSubmit && !loading ? 1 : 0.6,
+              cursor: canSubmit && !loading ? "pointer" : "not-allowed",
+            }}
+            disabled={!canSubmit || loading}
+          >
+            {loading ? "Вход..." : "Войти"}
           </button>
-<div style={{ marginTop: 10 }}>
-  Нет аккаунта? <a href="/register">Регистрация</a>
-</div>
 
-          {status ? <div style={styles.status}>{status}</div> : null}
+          {msg ? <div style={styles.msg}>{msg}</div> : null}
 
-          <div style={styles.backRow}>
-            <a href="/" style={styles.link}>
+          <div style={{ marginTop: 12 }}>
+            <Link href="/" style={styles.back}>
               ← На главную
-            </a>
+            </Link>
           </div>
         </form>
       </div>
-    </div>
+    </main>
   );
 }
 
 const styles = {
   page: {
     minHeight: "100vh",
-    display: "grid",
-    placeItems: "center",
-    padding: 16,
-    background: "#f6f7fb",
-    fontFamily:
-      'system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif',
+    display: "flex",
+    justifyContent: "center",
+    padding: 24,
+    background: "#f5f7fb",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
   },
   card: {
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 520,
     background: "#fff",
     borderRadius: 16,
+    padding: 24,
     boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-    overflow: "hidden",
-    border: "1px solid rgba(0,0,0,0.06)",
   },
-  header: {
-    padding: "18px 18px 12px",
-    borderBottom: "1px solid rgba(0,0,0,0.06)",
-    background: "linear-gradient(180deg, #ffffff 0%, #fbfbff 100%)",
-  },
-  title: { fontSize: 22, fontWeight: 700 },
-  subTitle: { marginTop: 4, color: "#6b7280", fontSize: 13 },
-  form: { padding: 18, display: "grid", gap: 10 },
-  label: { fontSize: 13, color: "#374151", fontWeight: 600 },
+  h1: { margin: 0, fontSize: 30 },
+  sub: { color: "#64748b", marginTop: 4 },
+  label: { display: "block", fontWeight: 700, color: "#111827", marginTop: 8 },
   input: {
-    padding: "11px 12px",
-    borderRadius: 10,
-    border: "1px solid rgba(0,0,0,0.15)",
-    outline: "none",
-    fontSize: 14,
-  },
-  rememberRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 2,
-    userSelect: "none",
-  },
-  rememberText: { fontSize: 14, color: "#111827" },
-  button: {
-    marginTop: 8,
-    padding: "12px 12px",
-    borderRadius: 10,
-    border: "none",
-    background: "#2563eb",
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  status: {
+    width: "100%",
     marginTop: 6,
-    padding: "10px 12px",
-    borderRadius: 10,
-    background: "#f3f4f6",
-    color: "#111827",
-    fontSize: 13,
+    padding: "12px 12px",
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    outline: "none",
+    fontSize: 16,
   },
-  backRow: { marginTop: 2 },
-  link: { color: "#2563eb", textDecoration: "none", fontSize: 14 },
+  checkboxRow: { display: "flex", alignItems: "center", marginTop: 10, color: "#111827" },
+  btn: {
+    width: "100%",
+    marginTop: 14,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: "#1d4ed8",
+    color: "#fff",
+    fontWeight: 800,
+    fontSize: 16,
+  },
+  msg: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    background: "#f1f5f9",
+    color: "#0f172a",
+  },
+  back: { color: "#1e40af", textDecoration: "none", fontWeight: 700 },
 };
