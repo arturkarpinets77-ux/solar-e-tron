@@ -8,6 +8,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  signOut,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -33,6 +34,12 @@ export default function LoginPage() {
     e.preventDefault();
     setMsg("");
 
+    // Firebase доступен только в браузере (в SSR/build auth/db будут null)
+    if (!auth || !db) {
+      setMsg("Firebase ещё не инициализирован. Обновите страницу и попробуйте снова.");
+      return;
+    }
+
     const pn = personalNumber.trim();
     const em = email.trim().toLowerCase();
 
@@ -57,7 +64,7 @@ export default function LoginPage() {
       const snap = await getDoc(doc(db, "Users", uid));
 
       if (!snap.exists()) {
-        await auth.signOut();
+        await signOut(auth);
         throw new Error("Профиль пользователя не найден в базе (Users/{uid}).");
       }
 
@@ -68,12 +75,12 @@ export default function LoginPage() {
       const status = String(data.status || "").trim().toLowerCase();
 
       if (status && status !== "active") {
-        await auth.signOut();
+        await signOut(auth);
         throw new Error("Пользователь не активен (status).");
       }
 
       if (dbEmail !== em || dbPN !== pn) {
-        await auth.signOut();
+        await signOut(auth);
         throw new Error("Неверный личный номер или e-mail.");
       }
 
@@ -97,6 +104,8 @@ export default function LoginPage() {
             style={styles.input}
             placeholder="Например: 1234567"
             value={personalNumber}
+            inputMode="numeric"
+            autoComplete="off"
             onChange={(e) => setPersonalNumber(e.target.value)}
           />
 
@@ -105,6 +114,8 @@ export default function LoginPage() {
             style={styles.input}
             placeholder="name@example.com"
             value={email}
+            type="email"
+            autoComplete="email"
             onChange={(e) => setEmail(e.target.value)}
           />
 
@@ -171,7 +182,12 @@ const styles = {
     outline: "none",
     fontSize: 16,
   },
-  checkboxRow: { display: "flex", alignItems: "center", marginTop: 10, color: "#111827" },
+  checkboxRow: {
+    display: "flex",
+    alignItems: "center",
+    marginTop: 10,
+    color: "#111827",
+  },
   btn: {
     width: "100%",
     marginTop: 14,
