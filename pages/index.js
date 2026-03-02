@@ -4,16 +4,17 @@ export default function HomePage() {
   return (
     <main style={styles.page}>
       <div style={styles.overlay}>
-        <div style={styles.center}>
-          <Link href="/login" style={styles.btn}>
+        <div style={styles.content}>
+          
+          <h1 style={styles.title}>Solar E-Tron</h1>
+          <p style={styles.subtitle}>
+            Учёт рабочего времени и фотоархив работ
+          </p>
+
+          <Link href="/login" style={styles.button}>
             Войти
           </Link>
 
-          {/* на будущее можно добавлять кнопки так:
-          <Link href="/register" style={{ ...styles.btn, marginTop: 12 }}>
-            Регистрация
-          </Link>
-          */}
         </div>
       </div>
     </main>
@@ -29,38 +30,46 @@ const styles = {
     backgroundRepeat: "no-repeat",
   },
 
-  // затемнение, чтобы элементы читались на фоне
   overlay: {
     minHeight: "100vh",
-    background: "rgba(0,0,0,0.10)",
+    background: "linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35))",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: 20,
   },
 
-  center: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 12,
+  content: {
+    textAlign: "center",
+    color: "white",
+    backdropFilter: "blur(2px)",
   },
 
-  btn: {
+  title: {
+    fontSize: 48,
+    fontWeight: 800,
+    marginBottom: 10,
+    letterSpacing: 1,
+  },
+
+  subtitle: {
+    fontSize: 18,
+    opacity: 0.9,
+    marginBottom: 40,
+  },
+
+  button: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 240,
-    height: 64,
-    padding: "0 28px",
+    padding: "14px 40px",
     borderRadius: 9999,
-    background: "#facc15", // жёлтый
-    color: "#111827",
-    fontWeight: 900,
-    fontSize: 22,
+    background: "#f4c430",   // мягкий золотистый
+    color: "#1f2937",
+    fontWeight: 700,
+    fontSize: 18,
     textDecoration: "none",
-    boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
-    border: "2px solid rgba(255,255,255,0.55)",
-    backdropFilter: "blur(2px)",
+    boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+    transition: "all 0.2s ease",
   },
 };
