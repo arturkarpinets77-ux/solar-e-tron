@@ -8,6 +8,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  signOut,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -29,6 +30,12 @@ export default function LoginPage() {
     setMsg("");
   }, [personalNumber, email, remember]);
 
+  useEffect(() => {
+    if (router.query.registered === "1") {
+      setMsg("Регистрация выполнена. Ожидайте активации директором/админом.");
+    }
+  }, [router.query.registered]);
+
   async function handleLogin(e) {
     e.preventDefault();
     setMsg("");
@@ -43,66 +50,51 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // Persist зависит от чекбокса "Запомнить меня"
+      if (!auth || !db) throw new Error("Firebase не инициализирован.");
+
       await setPersistence(
         auth,
         remember ? browserLocalPersistence : browserSessionPersistence
       );
 
-      // ВАЖНО: по вашей логике пароль = email
+      // Пароль = email (по твоей текущей логике)
       const cred = await signInWithEmailAndPassword(auth, em, em);
 
-      // Проверка профиля в Firestore: Users/{uid}
       const uid = cred.user.uid;
       const snap = await getDoc(doc(db, "Users", uid));
 
-      // Если нет документа профиля — считаем, что пользователь "не зарегистрирован"
+      // НИКАКОГО автосоздания профиля: если нет документа — значит не зарегистрирован
       if (!snap.exists()) {
-        await auth.signOut();
-        setMsg("Пользователь не зарегистрирован. Нажмите «Регистрация».");
-        return;
+        await signOut(auth);
+        throw new Error("Пользователь не зарегистрирован. Нажмите «Регистрация».");
       }
 
-      const data = snap.data();
-
+      const data = snap.data() || {};
       const dbEmail = String(data.email || "").trim().toLowerCase();
       const dbPN = String(data.personalNumber || "").trim();
       const status = String(data.status || "").trim().toLowerCase();
 
-      // Статусы
-      if (status === "pending") {
-        await auth.signOut();
-        setMsg("Профиль ожидает подтверждения директором или администратором.");
-        return;
-      }
-
-      if (status && status !== "active") {
-        await auth.signOut();
-        setMsg("Профиль не активен. Обратитесь к директору или администратору.");
-        return;
-      }
-
-      // Проверяем совпадение данных
+      // Проверка соответствия введённых данных профилю
       if (dbEmail !== em || dbPN !== pn) {
-        await auth.signOut();
-        setMsg("Неверный личный номер или e-mail.");
-        return;
+        await signOut(auth);
+        throw new Error("Неверный личный номер или e-mail.");
+      }
+
+      // Проверка статуса
+      if (status !== "active") {
+        await signOut(auth);
+        throw new Error("Профиль ещё не активирован директором/админом.");
       }
 
       router.push("/dashboard");
     } catch (err) {
       const code = err?.code || "";
-      const text = err?.message || "Ошибка входа";
-
-      // Если пользователя нет в Firebase Auth
-      if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+      if (code === "auth/user-not-found") {
         setMsg("Пользователь не зарегистрирован. Нажмите «Регистрация».");
-      } else if (code === "auth/wrong-password") {
-        setMsg("Неверный пароль.");
-      } else if (code === "auth/too-many-requests") {
-        setMsg("Слишком много попыток. Попробуйте позже.");
+      } else if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+        setMsg("Неверный личный номер или e-mail.");
       } else {
-        setMsg(text);
+        setMsg(err?.message || "Ошибка входа");
       }
     } finally {
       setLoading(false);
@@ -153,17 +145,16 @@ export default function LoginPage() {
             {loading ? "Вход..." : "Войти"}
           </button>
 
-          <div style={{ marginTop: 10, display: "flex", gap: 12 }}>
-            <Link href="/register" style={styles.registerBtn}>
+          {msg ? <div style={styles.msg}>{msg}</div> : null}
+
+          <div style={{ marginTop: 12, display: "flex", gap: 12 }}>
+            <Link href="/register" style={styles.back}>
               Регистрация
             </Link>
-
             <Link href="/" style={styles.back}>
               ← На главную
             </Link>
           </div>
-
-          {msg ? <div style={styles.msg}>{msg}</div> : null}
         </form>
       </div>
     </main>
@@ -199,12 +190,7 @@ const styles = {
     outline: "none",
     fontSize: 16,
   },
-  checkboxRow: {
-    display: "flex",
-    alignItems: "center",
-    marginTop: 10,
-    color: "#111827",
-  },
+  checkboxRow: { display: "flex", alignItems: "center", marginTop: 10, color: "#111827" },
   btn: {
     width: "100%",
     marginTop: 14,
@@ -215,15 +201,6 @@ const styles = {
     color: "#fff",
     fontWeight: 800,
     fontSize: 16,
-  },
-  registerBtn: {
-    display: "inline-block",
-    padding: "10px 12px",
-    borderRadius: 12,
-    background: "#e5e7eb",
-    color: "#111827",
-    textDecoration: "none",
-    fontWeight: 800,
   },
   msg: {
     marginTop: 12,
