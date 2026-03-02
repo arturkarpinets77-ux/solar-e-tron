@@ -1,134 +1,59 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/router";
-
-import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../lib/firebaseClient";
 
 export default function Dashboard() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setError("");
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
+    // Если страница рендерится на сервере (build/SSR) — просто выходим
+    if (!auth || !db) return;
 
+    const unsub = onAuthStateChanged(auth, async (user) => {
       try {
+        if (!user) {
+          window.location.href = "/login";
+          return;
+        }
+
         const snap = await getDoc(doc(db, "Users", user.uid));
-        if (!snap.exists()) throw new Error("Нет профиля Users/{uid}.");
-        setProfile(snap.data());
-      } catch (e) {
-        setError(e?.message || "Ошибка профиля");
+        setProfile(snap.exists() ? snap.data() : { email: user.email });
       } finally {
         setLoading(false);
       }
     });
 
     return () => unsub();
-  }, [router]);
+  }, []);
 
   async function handleLogout() {
+    if (!auth) return;
     await signOut(auth);
-    router.push("/login");
+    window.location.href = "/login";
   }
 
-  if (loading) {
-    return (
-      <main style={styles.page}>
-        <div style={styles.card}>Загрузка...</div>
-      </main>
-    );
-  }
+  if (loading) return <div style={{ padding: 24 }}>Загрузка...</div>;
 
   return (
-    <main style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={{ margin: 0 }}>Dashboard</h1>
-        <div style={{ color: "#64748b", marginTop: 6 }}>
-          Реальная авторизация + Firestore профиль
-        </div>
+    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
+      <h1>Кабинет</h1>
 
-        {error ? (
-          <div style={styles.err}>{error}</div>
-        ) : (
-          <div style={styles.box}>
-            <div><b>Роль:</b> {profile?.role || "—"}</div>
-            <div><b>Status:</b> {profile?.status || "—"}</div>
-            <div><b>Личный номер:</b> {profile?.personalNumber || "—"}</div>
-            <div><b>Email:</b> {profile?.email || "—"}</div>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={handleLogout} style={styles.btn}>
-            Выйти
-          </button>
-          <Link href="/" style={styles.link}>
-            На главную
-          </Link>
-        </div>
+      <div style={{ marginTop: 12, padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
+        <div><b>Имя:</b> {profile?.firstName ?? "-"}</div>
+        <div><b>Фамилия:</b> {profile?.lastName ?? "-"}</div>
+        <div><b>E-mail:</b> {profile?.email ?? "-"}</div>
+        <div><b>Личный номер:</b> {profile?.personalNumber ?? "-"}</div>
+        <div><b>Роль:</b> {profile?.role ?? "-"}</div>
+        <div><b>Статус:</b> {profile?.status ?? "-"}</div>
       </div>
-    </main>
+
+      <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
+        <button onClick={handleLogout}>Выйти</button>
+        <Link href="/">На главную</Link>
+      </div>
+    </div>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    padding: 24,
-    background: "#f5f7fb",
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 720,
-    background: "#fff",
-    borderRadius: 16,
-    padding: 24,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-  },
-  box: {
-    marginTop: 14,
-    padding: 14,
-    borderRadius: 12,
-    background: "#f1f5f9",
-    color: "#0f172a",
-    lineHeight: 1.7,
-  },
-  err: {
-    marginTop: 14,
-    padding: 14,
-    borderRadius: 12,
-    background: "#fff1f2",
-    color: "#9f1239",
-    border: "1px solid #fecdd3",
-  },
-  btn: {
-    marginTop: 14,
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "none",
-    background: "#0f172a",
-    color: "#fff",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  link: {
-    marginTop: 14,
-    padding: "10px 14px",
-    borderRadius: 12,
-    background: "#eef2ff",
-    color: "#1e40af",
-    textDecoration: "none",
-    fontWeight: 800,
-  },
-};
