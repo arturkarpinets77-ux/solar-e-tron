@@ -1,142 +1,167 @@
+/* Reset */
 html, body {
   padding: 0;
   margin: 0;
+  height: 100%;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-/* ======= Clear Glass (без размытия) ======= */
-/* Фон всей страницы (картинка у тебя уже есть в /public/bg-solar.jpg) */
+/* Фон на весь экран */
 body {
   min-height: 100vh;
-  background: url("/bg-solar.jpg") center/cover no-repeat fixed;
+  color: #ffffff;
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+  overflow-x: hidden;
 }
 
-/* Затемнение фона (очень лёгкое, чтобы текст читался) */
-.pageOverlay {
+/* Главный экран */
+.landing{
+  position: relative;
   min-height: 100vh;
-  width: 100%;
   display: grid;
   place-items: center;
-  padding: 48px 16px;
-  background: radial-gradient(
-      1200px 600px at 50% 25%,
-      rgba(0, 255, 255, 0.10),
-      transparent 60%
-    ),
-    linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0.12),
-      rgba(0, 0, 0, 0.18)
-    );
+  padding: 32px 16px;
 }
 
-/* Карточка-стекло (ВАЖНО: БЕЗ blur / backdrop-filter) */
-.glassCard {
+/* Картинка фона */
+.landing::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.12) 40%, rgba(0,0,0,0.25) 100%),
+    url("/bg-solar.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  transform: scale(1.02);
+  z-index: 0;
+}
+
+/* Лёгкая “атмосфера” сверху, как на мокапе */
+.landing::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(600px 260px at 50% 18%, rgba(255,255,255,0.10), rgba(255,255,255,0.00) 60%),
+    radial-gradient(900px 450px at 50% 10%, rgba(0,140,255,0.10), rgba(0,0,0,0.00) 70%);
+  z-index: 1;
+}
+
+/* “Стеклянная” карточка БЕЗ blur (как ты просил) */
+.glassCard{
   position: relative;
-  width: min(820px, 92vw);
-  padding: 56px 56px 44px;
-  border-radius: 28px;
+  z-index: 2;
 
-  /* прозрачность */
-  background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.10),
-      rgba(255, 255, 255, 0.06)
+  width: min(760px, 92vw);
+  padding: 44px 48px 42px;
+  border-radius: 26px;
+
+  /* Главное: прозрачность + слоёный градиент */
+  background:
+    /* блик сверху слева */
+    radial-gradient(900px 240px at 18% 0%, rgba(255,255,255,0.22), rgba(255,255,255,0.00) 58%),
+    /* мягкий “стеклянный” слой */
+    linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);
+
+  /* Тонкая рамка и “дорогая” тень */
+  border: 1px solid rgba(255,255,255,0.33);
+  box-shadow:
+    0 34px 90px rgba(0,0,0,0.34),
+    inset 0 1px 0 rgba(255,255,255,0.22);
+
+  /* Это важно, чтобы стекло не выглядело “пластиком” */
+  outline: 1px solid rgba(255,255,255,0.08);
+  outline-offset: -10px;
+
+  text-align: center;
+}
+
+/* Дополнительный “шум” (без картинок) — приближает к мокапу */
+.glassCard::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius: 26px;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,0.030) 0px,
+      rgba(255,255,255,0.030) 2px,
+      rgba(255,255,255,0.000) 6px,
+      rgba(255,255,255,0.000) 12px
     );
-
-  /* рамка и “дорогая” тень */
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-
-  /* ВАЖНО: убрать любые размытия */
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  opacity: 0.35;
+  pointer-events:none;
 }
 
-/* Блик сверху */
-.glassCard::before {
-  content: "";
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  top: 10px;
-  height: 45%;
+/* Нижний “отблеск” */
+.glassCard::after{
+  content:"";
+  position:absolute;
+  left: 7%;
+  right: 7%;
+  bottom: 12%;
+  height: 34%;
   border-radius: 22px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0.00)
-  );
-  pointer-events: none;
+  background: radial-gradient(closest-side at 50% 60%, rgba(255,255,255,0.10), rgba(255,255,255,0.00) 70%);
+  opacity: 0.6;
+  pointer-events:none;
 }
 
-/* Лёгкий внутренний “контур”, чтобы стекло читалось */
-.glassCard::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 28px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
-  pointer-events: none;
-}
-
-.brandTitle {
-  margin: 0;
-  text-align: center;
-  font-size: clamp(40px, 5vw, 56px);
+.brandTitle{
+  margin: 0 0 12px 0;
+  font-size: clamp(44px, 5vw, 64px);
+  font-weight: 500;
   letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+
+  /* лёгкое свечение текста */
+  text-shadow:
+    0 10px 30px rgba(0,0,0,0.30),
+    0 0 22px rgba(255,255,255,0.10);
 }
 
-.brandSubtitle {
-  margin: 14px 0 28px;
-  text-align: center;
-  font-size: clamp(14px, 1.8vw, 18px);
-  color: rgba(255, 255, 255, 0.88);
-  text-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+.brandSubtitle{
+  margin: 0 0 28px 0;
+  font-size: clamp(14px, 1.2vw, 16px);
+  color: rgba(255,255,255,0.90);
+  text-shadow: 0 10px 22px rgba(0,0,0,0.30);
 }
 
-.primaryBtn {
-  display: block;
-  margin: 0 auto;
-  padding: 14px 44px;
+/* Кнопка “как в мокапе”: мягкая, читаемая, не агрессивная */
+.primaryBtn{
+  border: 1px solid rgba(255,255,255,0.35);
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-
-  color: rgba(255, 255, 255, 0.95);
-  font-weight: 600;
+  padding: 12px 34px;
   font-size: 16px;
-  cursor: pointer;
-
-  background: linear-gradient(
-    180deg,
-    rgba(20, 170, 255, 0.55),
-    rgba(0, 120, 255, 0.40)
-  );
-
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
   box-shadow:
-    0 16px 34px rgba(0, 0, 0, 0.30),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 18px 40px rgba(0,0,0,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.20);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 
-.primaryBtn:hover {
+.primaryBtn:hover{
   transform: translateY(-1px);
+  box-shadow:
+    0 22px 55px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.22);
 }
 
-.primaryBtn:active {
+.primaryBtn:active{
   transform: translateY(0px);
 }
 
-/* Адаптация под мелкие экраны */
-@media (max-width: 520px) {
-  .glassCard {
-    padding: 40px 22px 34px;
-    border-radius: 22px;
+/* Адаптация под маленькие экраны */
+@media (max-width: 520px){
+  .glassCard{
+    padding: 34px 22px 32px;
+    outline-offset: -8px;
   }
 }
