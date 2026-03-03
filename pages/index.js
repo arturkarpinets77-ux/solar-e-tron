@@ -1,15 +1,19 @@
-import Link from "next/link";
+import { useRouter } from "next/router";
 
 export default function Home() {
-  return (
-    <div className="hero">
-      <div className="glass-card">
-        <h1>Solar E-Tron</h1>
-        <p>Учёт рабочего времени и фотоархив работ</p>
+  const router = useRouter();
 
-        <Link href="/login">
-          <button className="login-btn">Войти</button>
-        </Link>
+  return (
+    <div className="page-bg">
+      <div className="page-content">
+        <div className="glass-card">
+          <h1 className="hero-title">Solar E-Tron</h1>
+          <p className="hero-subtitle">Учёт рабочего времени и фотоархив работ</p>
+
+          <button className="hero-btn" onClick={() => router.push("/login")}>
+            Войти
+          </button>
+        </div>
       </div>
     </div>
   );
