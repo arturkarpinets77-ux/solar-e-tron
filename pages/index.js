@@ -8,7 +8,9 @@ export default function Home() {
       <div className="page-content">
         <div className="glass-card">
           <h1 className="hero-title">Solar E-Tron</h1>
-          <p className="hero-subtitle">Учёт рабочего времени и фотоархив работ</p>
+          <p className="hero-subtitle">
+            Учёт рабочего времени и фотоархив работ
+          </p>
 
           <button className="hero-btn" onClick={() => router.push("/login")}>
             Войти
