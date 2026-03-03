@@ -1,0 +1,26 @@
+/* ============================= */
+/* ГЛОБАЛЬНЫЙ ФОН ДЛЯ ВСЕХ СТРАНИЦ */
+/* ============================= */
+
+/* Фон всей страницы */
+body {
+  background-image:
+    linear-gradient(
+      rgba(0, 0, 0, 0.15),
+      rgba(0, 0, 0, 0.15)
+    ),
+    url("/bg-solar.jpg");
+
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+
+  min-height: 100vh;
+}
+
+/* Чтобы контент не прилипал к краям */
+.page-container {
+  min-height: 100vh;
+  padding: 40px 20px;
+}
