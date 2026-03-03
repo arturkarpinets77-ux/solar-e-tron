@@ -5,7 +5,7 @@ export default function Home() {
 
   return (
     <div className="page-bg">
-      <div className="page-content">
+      <div className="page-overlay">
         <div className="glass-card">
           <h1 className="hero-title">Solar E-Tron</h1>
           <p className="hero-subtitle">
