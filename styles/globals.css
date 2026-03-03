@@ -1,142 +1,167 @@
+/* Reset */
 html, body {
   padding: 0;
   margin: 0;
   height: 100%;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
 }
 
 * { box-sizing: border-box; }
 
-:root{
-  --glass-border: rgba(255,255,255,0.35);
-  --glass-fill: rgba(255,255,255,0.08);
-  --glass-fill-2: rgba(255,255,255,0.04);
-  --shadow: 0 30px 80px rgba(0,0,0,0.45);
+/* Фон на весь экран */
+body {
+  min-height: 100vh;
+  color: #ffffff;
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+  overflow-x: hidden;
 }
 
-.hero {
+/* Главный экран */
+.landing{
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 40px 16px;
-  background-image:
-    linear-gradient(
-      180deg,
-      rgba(0, 0, 0, 0.18) 0%,
-      rgba(0, 0, 0, 0.10) 40%,
-      rgba(0, 0, 0, 0.22) 100%
-    ),
+  padding: 32px 16px;
+}
+
+/* Картинка фона */
+.landing::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.12) 40%, rgba(0,0,0,0.25) 100%),
     url("/bg-solar.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  transform: scale(1.02);
+  z-index: 0;
 }
 
-.glassCard {
-  width: min(860px, 92vw);
-  padding: 56px 48px;
-  border-radius: 32px;
+/* Лёгкая “атмосфера” сверху, как на мокапе */
+.landing::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(600px 260px at 50% 18%, rgba(255,255,255,0.10), rgba(255,255,255,0.00) 60%),
+    radial-gradient(900px 450px at 50% 10%, rgba(0,140,255,0.10), rgba(0,0,0,0.00) 70%);
+  z-index: 1;
+}
+
+/* “Стеклянная” карточка БЕЗ blur (как ты просил) */
+.glassCard{
   position: relative;
-  color: #fff;
-  box-shadow: var(--shadow);
-  border: 1px solid var(--glass-border);
-  background: linear-gradient(
-    180deg,
-    rgba(255,255,255,0.14) 0%,
-    rgba(255,255,255,0.06) 45%,
-    rgba(255,255,255,0.09) 100%
-  );
-  overflow: hidden;
+  z-index: 2;
+
+  width: min(760px, 92vw);
+  padding: 44px 48px 42px;
+  border-radius: 26px;
+
+  /* Главное: прозрачность + слоёный градиент */
+  background:
+    /* блик сверху слева */
+    radial-gradient(900px 240px at 18% 0%, rgba(255,255,255,0.22), rgba(255,255,255,0.00) 58%),
+    /* мягкий “стеклянный” слой */
+    linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);
+
+  /* Тонкая рамка и “дорогая” тень */
+  border: 1px solid rgba(255,255,255,0.33);
+  box-shadow:
+    0 34px 90px rgba(0,0,0,0.34),
+    inset 0 1px 0 rgba(255,255,255,0.22);
+
+  /* Это важно, чтобы стекло не выглядело “пластиком” */
+  outline: 1px solid rgba(255,255,255,0.08);
+  outline-offset: -10px;
+
+  text-align: center;
 }
 
-/* верхняя мягкая засветка (как на мокапе) */
+/* Дополнительный “шум” (без картинок) — приближает к мокапу */
 .glassCard::before{
   content:"";
   position:absolute;
   inset:0;
-  background:
-    radial-gradient(1200px 220px at 50% 0%,
-      rgba(255,255,255,0.28),
-      rgba(255,255,255,0.10) 35%,
-      rgba(255,255,255,0.00) 70%
-    );
-  pointer-events:none;
-}
-
-/* “шум”/текстура + лёгкая диагональная сетка (почти незаметно, но делает “дороже”) */
-.glassCard::after{
-  content:"";
-  position:absolute;
-  inset:0;
+  border-radius: 26px;
   background:
     repeating-linear-gradient(
       135deg,
-      rgba(255,255,255,0.06) 0px,
-      rgba(255,255,255,0.06) 1px,
-      rgba(255,255,255,0.00) 10px,
-      rgba(255,255,255,0.00) 16px
-    ),
-    radial-gradient(600px 260px at 50% 65%,
-      rgba(255,255,255,0.08),
-      rgba(255,255,255,0.00) 70%
+      rgba(255,255,255,0.030) 0px,
+      rgba(255,255,255,0.030) 2px,
+      rgba(255,255,255,0.000) 6px,
+      rgba(255,255,255,0.000) 12px
     );
   opacity: 0.35;
   pointer-events:none;
-  mix-blend-mode: overlay;
 }
 
-.glassInner {
-  position: relative;
-  z-index: 1;
-  text-align: center;
+/* Нижний “отблеск” */
+.glassCard::after{
+  content:"";
+  position:absolute;
+  left: 7%;
+  right: 7%;
+  bottom: 12%;
+  height: 34%;
+  border-radius: 22px;
+  background: radial-gradient(closest-side at 50% 60%, rgba(255,255,255,0.10), rgba(255,255,255,0.00) 70%);
+  opacity: 0.6;
+  pointer-events:none;
 }
 
-.title {
-  margin: 0 0 14px;
-  font-size: clamp(44px, 5vw, 60px);
+.brandTitle{
+  margin: 0 0 12px 0;
+  font-size: clamp(44px, 5vw, 64px);
   font-weight: 500;
   letter-spacing: 0.5px;
-  text-shadow: 0 8px 18px rgba(0,0,0,0.35);
+
+  /* лёгкое свечение текста */
+  text-shadow:
+    0 10px 30px rgba(0,0,0,0.30),
+    0 0 22px rgba(255,255,255,0.10);
 }
 
-.subtitle {
-  margin: 0 0 26px;
-  font-size: 14px;
-  letter-spacing: 0.6px;
-  opacity: 0.92;
-  text-shadow: 0 8px 18px rgba(0,0,0,0.35);
+.brandSubtitle{
+  margin: 0 0 28px 0;
+  font-size: clamp(14px, 1.2vw, 16px);
+  color: rgba(255,255,255,0.90);
+  text-shadow: 0 10px 22px rgba(0,0,0,0.30);
 }
 
-.cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 46px;
-  padding: 0 28px;
-  border-radius: 999px;
+/* Кнопка “как в мокапе”: мягкая, читаемая, не агрессивная */
+.primaryBtn{
   border: 1px solid rgba(255,255,255,0.35);
-  background: linear-gradient(
-    180deg,
-    rgba(35, 197, 255, 0.35) 0%,
-    rgba(0, 140, 255, 0.28) 100%
-  );
-  color: #ffffff;
-  text-decoration: none;
+  border-radius: 999px;
+  padding: 12px 34px;
+  font-size: 16px;
   font-weight: 600;
-  box-shadow: 0 14px 30px rgba(0,0,0,0.28);
-  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  color: rgba(255,255,255,0.92);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
+  box-shadow:
+    0 18px 40px rgba(0,0,0,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.20);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 
-.cta:hover {
+.primaryBtn:hover{
   transform: translateY(-1px);
-  box-shadow: 0 18px 40px rgba(0,0,0,0.34);
-  background: linear-gradient(
-    180deg,
-    rgba(35, 197, 255, 0.45) 0%,
-    rgba(0, 140, 255, 0.34) 100%
-  );
+  box-shadow:
+    0 22px 55px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.22);
 }
 
+.primaryBtn:active{
+  transform: translateY(0px);
+}
+
+/* Адаптация под маленькие экраны */
 @media (max-width: 520px){
-  .glassCard { padding: 44px 22px; border-radius: 26px; }
+  .glassCard{
+    padding: 34px 22px 32px;
+    outline-offset: -8px;
+  }
 }
