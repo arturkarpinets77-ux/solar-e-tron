@@ -51,7 +51,7 @@ export default function WorkdayPage() {
           padding: "12px 14px",
           borderRadius: 12,
           border: "none",
-          background: "#1d4ed8",
+          background: "transparent",
           color: "#fff",
           fontWeight: 800,
           cursor: "pointer",
