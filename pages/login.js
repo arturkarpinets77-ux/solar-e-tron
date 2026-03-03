@@ -167,7 +167,7 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     padding: 24,
-    background: "#f5f7fb",
+    background: "transparent",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
   },
   card: {
