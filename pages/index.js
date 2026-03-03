@@ -4,19 +4,15 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <div className="page-bg">
-      <div className="page-overlay">
-        <div className="glass-card">
-          <h1 className="hero-title">Solar E-Tron</h1>
-          <p className="hero-subtitle">
-            Учёт рабочего времени и фотоархив работ
-          </p>
+    <main className="landing">
+      <div className="glassCard">
+        <h1 className="brandTitle">Solar E-Tron</h1>
+        <p className="brandSubtitle">Учёт рабочего времени и фотоархив работ</p>
 
-          <button className="hero-btn" onClick={() => router.push("/login")}>
-            Войти
-          </button>
-        </div>
+        <button className="primaryBtn" onClick={() => router.push("/login")}>
+          Войти
+        </button>
       </div>
-    </div>
+    </main>
   );
 }
