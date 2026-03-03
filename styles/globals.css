@@ -1,90 +1,119 @@
 html, body {
   padding: 0;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  height: 100%;
 }
 
 * {
   box-sizing: border-box;
 }
 
-.hero {
-  height: 100vh;
-  background: url("/bg-solar.jpg") center/cover no-repeat;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-/* ============================= */
-/* GLASS CARD */
-/* ============================= */
-
-.glass-card {
+/* Фон страницы */
+.page-bg {
+  min-height: 100vh;
+  width: 100%;
+  background-image: url("/bg-solar.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: grid;
+  place-items: center;
   position: relative;
-  overflow: hidden;
-
-  padding: 70px 90px;
-  border-radius: 24px;
-  text-align: center;
-  color: #ffffff;
-
-  background: rgba(10, 20, 35, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.55);
 }
 
-/* blur-слой */
-.glass-card::before {
+/* Лёгкое затемнение, чтобы стекло читалось */
+.page-bg::before {
   content: "";
   position: absolute;
   inset: 0;
-
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-
-  border-radius: 24px;
-  z-index: 0;
+  background: rgba(0, 0, 0, 0.18);
 }
 
-/* чтобы текст был поверх blur */
-.glass-card > * {
+/* Контент поверх затемнения */
+.page-content {
   position: relative;
   z-index: 1;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 40px 16px;
 }
 
-.glass-card h1 {
-  font-size: 48px;
-  margin-bottom: 20px;
-  font-weight: 300;
-  letter-spacing: 2px;
+/* Стеклянная карточка */
+.glass-card {
+  width: min(720px, 92vw);
+  padding: 48px 42px;
+  border-radius: 24px;
+
+  /* ВАЖНО: фон должен быть полупрозрачный */
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.08)
+  );
+
+  /* ВАЖНО: вот оно "стекло" */
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  position: relative;
+  overflow: hidden;
 }
 
-.glass-card p {
-  font-size: 18px;
-  margin-bottom: 45px;
-  opacity: 0.85;
+/* Блик сверху */
+.glass-card::before {
+  content: "";
+  position: absolute;
+  inset: -40% -40% auto -40%;
+  height: 220px;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0.0) 60%
+  );
+  pointer-events: none;
 }
 
-/* ============================= */
-/* BUTTON */
-/* ============================= */
+/* Текст внутри */
+.hero-title {
+  margin: 0;
+  text-align: center;
+  font-size: 56px;
+  line-height: 1.05;
+  color: rgba(255,255,255,0.92);
+  letter-spacing: 0.5px;
+}
 
-.login-btn {
-  padding: 15px 55px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.2);
-  background: rgba(255,255,255,0.12);
-  color: white;
-  font-size: 18px;
-  font-weight: 600;
+.hero-subtitle {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 16px;
+  color: rgba(255,255,255,0.82);
+}
+
+/* Кнопка */
+.hero-btn {
+  margin: 28px auto 0;
+  display: block;
+  border: 0;
   cursor: pointer;
-  transition: 0.3s ease;
+  padding: 14px 34px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.92);
+
+  background: linear-gradient(
+    180deg,
+    rgba(30, 136, 229, 0.95),
+    rgba(13, 71, 161, 0.95)
+  );
+
+  box-shadow: 0 10px 24px rgba(0,0,0,0.28);
 }
 
-.login-btn:hover {
-  background: rgba(255,255,255,0.18);
-  transform: translateY(-2px);
-  box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+.hero-btn:hover {
+  transform: translateY(-1px);
 }
