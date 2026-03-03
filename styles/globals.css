@@ -1,121 +1,142 @@
 html, body {
   padding: 0;
   margin: 0;
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* ===== ФОН ===== */
-
-.page-bg {
+/* ======= Clear Glass (без размытия) ======= */
+/* Фон всей страницы (картинка у тебя уже есть в /public/bg-solar.jpg) */
+body {
   min-height: 100vh;
-  background: url("/bg-solar.jpg") center/cover no-repeat;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: url("/bg-solar.jpg") center/cover no-repeat fixed;
 }
 
-/* Мягкое затемнение как в рендере */
-.page-overlay {
+/* Затемнение фона (очень лёгкое, чтобы текст читался) */
+.pageOverlay {
+  min-height: 100vh;
   width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    rgba(10, 20, 35, 0.35),
-    rgba(10, 20, 35, 0.35)
-  );
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
+  display: grid;
+  place-items: center;
+  padding: 48px 16px;
+  background: radial-gradient(
+      1200px 600px at 50% 25%,
+      rgba(0, 255, 255, 0.10),
+      transparent 60%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.12),
+      rgba(0, 0, 0, 0.18)
+    );
 }
 
-/* ===== СТЕКЛЯННАЯ КАРТОЧКА ===== */
-
-.glass-card {
-  width: min(760px, 92vw);
-  padding: 80px 90px;
+/* Карточка-стекло (ВАЖНО: БЕЗ blur / backdrop-filter) */
+.glassCard {
+  position: relative;
+  width: min(820px, 92vw);
+  padding: 56px 56px 44px;
   border-radius: 28px;
 
-  /* почти полностью прозрачная */
+  /* прозрачность */
   background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.12),
-    rgba(255, 255, 255, 0.06)
-  );
+      180deg,
+      rgba(255, 255, 255, 0.10),
+      rgba(255, 255, 255, 0.06)
+    );
 
-  /* тонкая светлая рамка */
-  border: 1px solid rgba(255, 255, 255, 0.45);
-
-  /* глубина */
+  /* рамка и “дорогая” тень */
+  border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow:
-    0 40px 100px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255,255,255,0.4);
+    0 24px 70px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-
-  text-align: center;
-  color: white;
-  position: relative;
-  overflow: hidden;
+  /* ВАЖНО: убрать любые размытия */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-/* Световой блик сверху */
-.glass-card::before {
+/* Блик сверху */
+.glassCard::before {
   content: "";
   position: absolute;
-  top: -120px;
-  left: -120px;
-  width: 300px;
-  height: 300px;
-  background: radial-gradient(
-    circle,
-    rgba(255,255,255,0.35),
-    rgba(255,255,255,0.05),
-    transparent 70%
+  left: 12px;
+  right: 12px;
+  top: 10px;
+  height: 45%;
+  border-radius: 22px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0.00)
   );
   pointer-events: none;
 }
 
-/* ===== ТЕКСТ ===== */
+/* Лёгкий внутренний “контур”, чтобы стекло читалось */
+.glassCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  pointer-events: none;
+}
 
-.hero-title {
+.brandTitle {
   margin: 0;
-  font-size: 60px;
-  font-weight: 300;
-  letter-spacing: 1px;
+  text-align: center;
+  font-size: clamp(40px, 5vw, 56px);
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
-.hero-subtitle {
-  margin-top: 18px;
-  font-size: 16px;
-  opacity: 0.85;
+.brandSubtitle {
+  margin: 14px 0 28px;
+  text-align: center;
+  font-size: clamp(14px, 1.8vw, 18px);
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
-/* ===== КНОПКА ===== */
-
-.hero-btn {
-  margin-top: 38px;
-  padding: 15px 48px;
+.primaryBtn {
+  display: block;
+  margin: 0 auto;
+  padding: 14px 44px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.4);
+  border: 1px solid rgba(255, 255, 255, 0.28);
 
-  background: rgba(255,255,255,0.18);
-  color: white;
-  font-size: 16px;
+  color: rgba(255, 255, 255, 0.95);
   font-weight: 600;
-
+  font-size: 16px;
   cursor: pointer;
-  transition: 0.3s ease;
+
+  background: linear-gradient(
+    180deg,
+    rgba(20, 170, 255, 0.55),
+    rgba(0, 120, 255, 0.40)
+  );
+
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
-.hero-btn:hover {
-  background: rgba(255,255,255,0.28);
-  transform: translateY(-2px);
-  box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+.primaryBtn:hover {
+  transform: translateY(-1px);
+}
+
+.primaryBtn:active {
+  transform: translateY(0px);
+}
+
+/* Адаптация под мелкие экраны */
+@media (max-width: 520px) {
+  .glassCard {
+    padding: 40px 22px 34px;
+    border-radius: 22px;
+  }
 }
