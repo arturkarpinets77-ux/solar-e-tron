@@ -1,26 +1,23 @@
-/* ============================= */
-/* ГЛОБАЛЬНЫЙ ФОН ДЛЯ ВСЕХ СТРАНИЦ */
-/* ============================= */
+/* styles/background.css */
 
-/* Фон всей страницы */
+/* 1) Базовая высота */
+html, body {
+  height: 100%;
+}
+
+/* 2) Глобальный фон (картинка из /public/bg-solar.jpg) */
 body {
-  background-image:
-    linear-gradient(
-      rgba(0, 0, 0, 0.15),
-      rgba(0, 0, 0, 0.15)
-    ),
-    url("/bg-solar.jpg");
-
+  margin: 0;
+  background-image: url("/bg-solar.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
-
-  min-height: 100vh;
 }
 
-/* Чтобы контент не прилипал к краям */
-.page-container {
+/* 3) Важно: Next.js рендерит всё внутри #__next
+      Если у #__next есть свой background (белый/серый) — он перекроет картинку */
+#__next {
   min-height: 100vh;
-  padding: 40px 20px;
+  background: transparent !important;
 }
