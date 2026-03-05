@@ -6,10 +6,10 @@ import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
-// CSS Modules (разные роли = разные стили, но сейчас одинаковые по базе)
 import workerStyles from "../styles/worker.module.css";
 import managerStyles from "../styles/manager.module.css";
 import accountantStyles from "../styles/accountant.module.css";
+import typo from "../styles/typography.module.css";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -48,15 +48,12 @@ export default function DashboardPage() {
           String(data.surname || "").trim() ||
           "";
 
-        const role = String(data.role || "").trim().toLowerCase();
-        const status = String(data.status || "").trim().toLowerCase();
-
         setProfile({
           uid: user.uid,
           email: String(data.email || user.email || "").trim(),
           personalNumber: String(data.personalNumber || "").trim(),
-          role,
-          status,
+          role: String(data.role || "").trim().toLowerCase(),
+          status: String(data.status || "").trim().toLowerCase(),
           firstName,
           lastName,
         });
@@ -89,7 +86,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <main className={styles.page}>
-        <div className={styles.card}>Загрузка...</div>
+        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
       </main>
     );
   }
@@ -97,17 +94,17 @@ export default function DashboardPage() {
   if (!profile) {
     return (
       <main className={styles.page}>
-        <div className={styles.card}>Профиль не найден</div>
+        <div className={`${styles.card} ${typo.base}`}>Профиль не найден</div>
       </main>
     );
   }
 
   return (
     <main className={styles.page}>
-      <div className={styles.card}>
+      <div className={`${styles.card} ${typo.base}`}>
         <div className={styles.header}>
           <div>
-            <div className={styles.title}>Кабинет</div>
+            <div className={`${styles.title} ${typo.title}`}>Кабинет</div>
             <div className={styles.subtitle}>Solar E-Tron</div>
           </div>
         </div>
