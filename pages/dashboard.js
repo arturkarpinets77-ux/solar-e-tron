@@ -6,6 +6,11 @@ import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
+// CSS modules по ролям
+import w from "../styles/worker.module.css";
+import m from "../styles/manager.module.css";
+import a from "../styles/accountant.module.css";
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -33,8 +38,6 @@ export default function DashboardPage() {
 
         const data = snap.data() || {};
 
-        // --- ВАЖНО: берём имя/фамилию из firstName/lastName
-        // и делаем fallback на возможные старые поля
         const firstName =
           String(data.firstName || "").trim() ||
           String(data.name || "").trim() ||
@@ -45,7 +48,6 @@ export default function DashboardPage() {
           String(data.surname || "").trim() ||
           "";
 
-        // Если вдруг использовалось fullName:
         let fullName = String(data.fullName || "").trim();
         if (!fullName && (firstName || lastName)) {
           fullName = `${firstName} ${lastName}`.trim();
@@ -54,7 +56,7 @@ export default function DashboardPage() {
         setProfile({
           email: String(data.email || user.email || "").trim(),
           personalNumber: String(data.personalNumber || "").trim(),
-          role: String(data.role || "").trim(),
+          role: String(data.role || "").trim().toLowerCase(),
           status: String(data.status || "").trim(),
           firstName,
           lastName,
@@ -79,28 +81,39 @@ export default function DashboardPage() {
     }
   }
 
+  // Выбор набора стилей по роли
+  const s =
+    profile?.role === "worker"
+      ? w
+      : profile?.role === "accountant"
+      ? a
+      : m; // director/admin -> manager
+
   if (loading) {
     return (
-      <main style={styles.page}>
-        <div style={styles.card}>Загрузка...</div>
+      <main className={s.page}>
+        <div className={s.card}>Загрузка...</div>
       </main>
     );
   }
 
   if (!profile) {
     return (
-      <main style={styles.page}>
-        <div style={styles.card}>Профиль не найден</div>
+      <main className={s.page}>
+        <div className={s.card}>Профиль не найден</div>
       </main>
     );
   }
 
-  return (
-    <main style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={styles.h1}>Кабинет</h1>
+  const isManager = profile.role === "admin" || profile.role === "director";
 
-        <div style={styles.box}>
+  return (
+    <main className={s.page}>
+      <div className={s.card}>
+        <h1 className={s.h1}>Кабинет</h1>
+        {"sub" in s ? <div className={s.sub}>Solar E-Tron</div> : null}
+
+        <div className={s.box}>
           <div><b>Имя:</b> {profile.firstName || "-"}</div>
           <div><b>Фамилия:</b> {profile.lastName || "-"}</div>
           <div><b>E-mail:</b> {profile.email || "-"}</div>
@@ -109,61 +122,38 @@ export default function DashboardPage() {
           <div><b>Статус:</b> {profile.status || "-"}</div>
         </div>
 
-        {msg ? <div style={styles.msg}>{msg}</div> : null}
+        {/* Блок кнопок по ролям */}
+        {profile.role === "worker" ? (
+          <div className={w.actions}>
+            <Link className={w.btn} href="/workday">Отметка рабочего дня</Link>
+            <button className={w.btn} onClick={() => alert("Скоро: История рабочего времени")}>История рабочего времени</button>
+            <button className={w.btn} onClick={() => alert("Скоро: Фотоотчёт")}>Добавить фотоотчёт</button>
+            <button className={w.btn} onClick={() => alert("Скоро: Мои данные")}>Мой профиль</button>
+          </div>
+        ) : profile.role === "accountant" ? (
+          <div className={a.actions}>
+            <Link className={a.btnLight} href="/workday">Просмотр рабочих дней</Link>
+            <button className={a.btnLight} onClick={() => alert("Скоро: Отчёты/Экспорт")}>Отчёты (месяц)</button>
+          </div>
+        ) : (
+          <div className={m.actions}>
+            <Link className={m.btnLight} href="/admin">Активация пользователей</Link>
+            <Link className={m.btnLight} href="/workday">Рабочие логи</Link>
+            {isManager ? (
+              <button className={m.btn} onClick={() => alert("Скоро: Управление сайтом/кнопками")}>
+                Управление сайтом
+              </button>
+            ) : null}
+          </div>
+        )}
 
-        <div style={{ marginTop: 14 }}>
-          <button onClick={handleLogout} style={styles.btnSecondary}>
-            Выйти
-          </button>
-          <Link href="/" style={styles.link}>
-            На главную
-          </Link>
+        {msg ? <div className={s.msg}>{msg}</div> : null}
+
+        <div className={s.footerRow}>
+          <button onClick={handleLogout} className={s.btnSecondary}>Выйти</button>
+          <Link href="/" className={s.link}>На главную</Link>
         </div>
       </div>
     </main>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    padding: 24,
-    background: "transparent",
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 760,
-    background: "#fff",
-    borderRadius: 16,
-    padding: 24,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-  },
-  h1: { margin: 0, fontSize: 34 },
-  box: {
-    marginTop: 14,
-    padding: 16,
-    borderRadius: 12,
-    border: "1px solid #e5e7eb",
-    background: "#fafafa",
-    lineHeight: 1.8,
-  },
-  msg: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 12,
-    background: "#f1f5f9",
-    color: "#0f172a",
-  },
-  btnSecondary: {
-    padding: "10px 14px",
-    borderRadius: 10,
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    cursor: "pointer",
-    marginRight: 14,
-  },
-  link: { color: "#1e40af", textDecoration: "none", fontWeight: 700 },
-};
