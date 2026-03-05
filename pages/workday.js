@@ -70,7 +70,6 @@ export default function WorkdayPage() {
           return;
         }
 
-        // Если захочешь — можно разрешить директору/админу тоже заходить сюда
         if (role !== "worker") {
           router.replace("/dashboard");
           return;
@@ -105,6 +104,7 @@ export default function WorkdayPage() {
     setDayDoc(s.exists() ? s.data() : null);
   }
 
+  // Состояния
   const started = !!dayDoc?.startAt;
   const breakStarted = !!dayDoc?.breakStartAt;
   const breakEnded = !!dayDoc?.breakEndAt;
@@ -121,9 +121,11 @@ export default function WorkdayPage() {
 
     try {
       const s = await getDoc(dayRef);
+
       if (s.exists()) {
         const d = s.data() || {};
         if (d.startAt) return setMsg("Рабочий день уже начат.");
+
         await updateDoc(dayRef, {
           dateKey,
           startAt: serverTimestamp(),
@@ -142,6 +144,7 @@ export default function WorkdayPage() {
           updatedAt: serverTimestamp(),
         });
       }
+
       await refreshDay();
     } catch (e) {
       setMsg(e?.message || "Ошибка: не удалось начать день");
@@ -166,6 +169,7 @@ export default function WorkdayPage() {
         status: "break",
         updatedAt: serverTimestamp(),
       });
+
       await refreshDay();
     } catch (e) {
       setMsg(e?.message || "Ошибка: не удалось начать перерыв");
@@ -190,6 +194,7 @@ export default function WorkdayPage() {
         status: "started",
         updatedAt: serverTimestamp(),
       });
+
       await refreshDay();
     } catch (e) {
       setMsg(e?.message || "Ошибка: не удалось завершить перерыв");
@@ -217,6 +222,7 @@ export default function WorkdayPage() {
         status: "ended",
         updatedAt: serverTimestamp(),
       });
+
       await refreshDay();
     } catch (e) {
       setMsg(e?.message || "Ошибка: не удалось завершить день");
