@@ -6,10 +6,7 @@ import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
-// CSS modules по ролям
-import w from "../styles/worker.module.css";
-import m from "../styles/manager.module.css";
-import a from "../styles/accountant.module.css";
+import s from "../styles/worker.module.css";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -23,6 +20,7 @@ export default function DashboardPage() {
 
     const unsub = onAuthStateChanged(auth, async (user) => {
       setMsg("");
+
       if (!user) {
         router.replace("/login");
         return;
@@ -48,19 +46,13 @@ export default function DashboardPage() {
           String(data.surname || "").trim() ||
           "";
 
-        let fullName = String(data.fullName || "").trim();
-        if (!fullName && (firstName || lastName)) {
-          fullName = `${firstName} ${lastName}`.trim();
-        }
-
         setProfile({
           email: String(data.email || user.email || "").trim(),
           personalNumber: String(data.personalNumber || "").trim(),
-          role: String(data.role || "").trim().toLowerCase(),
+          role: String(data.role || "").trim(),
           status: String(data.status || "").trim(),
           firstName,
           lastName,
-          fullName,
         });
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки профиля");
@@ -81,14 +73,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Выбор набора стилей по роли
-  const s =
-    profile?.role === "worker"
-      ? w
-      : profile?.role === "accountant"
-      ? a
-      : m; // director/admin -> manager
-
   if (loading) {
     return (
       <main className={s.page}>
@@ -105,53 +89,62 @@ export default function DashboardPage() {
     );
   }
 
-  const isManager = profile.role === "admin" || profile.role === "director";
-
   return (
     <main className={s.page}>
       <div className={s.card}>
-        <h1 className={s.h1}>Кабинет</h1>
-        {"sub" in s ? <div className={s.sub}>Solar E-Tron</div> : null}
+        <h1 className={s.title}>Кабинет</h1>
+        <div className={s.sub}>Solar E-Tron</div>
 
-        <div className={s.box}>
-          <div><b>Имя:</b> {profile.firstName || "-"}</div>
-          <div><b>Фамилия:</b> {profile.lastName || "-"}</div>
-          <div><b>E-mail:</b> {profile.email || "-"}</div>
-          <div><b>Личный номер:</b> {profile.personalNumber || "-"}</div>
-          <div><b>Роль:</b> {profile.role || "-"}</div>
-          <div><b>Статус:</b> {profile.status || "-"}</div>
+        <div className={s.profileBox}>
+          <div>
+            <b>Имя:</b> {profile.firstName || "-"}
+          </div>
+          <div>
+            <b>Фамилия:</b> {profile.lastName || "-"}
+          </div>
+          <div>
+            <b>E-mail:</b> {profile.email || "-"}
+          </div>
+          <div>
+            <b>Личный номер:</b> {profile.personalNumber || "-"}
+          </div>
+          <div>
+            <b>Роль:</b> {profile.role || "-"}
+          </div>
+          <div>
+            <b>Статус:</b> {profile.status || "-"}
+          </div>
         </div>
 
-        {/* Блок кнопок по ролям */}
-        {profile.role === "worker" ? (
-          <div className={w.actions}>
-            <Link className={w.btn} href="/workday">Отметка рабочего дня</Link>
-            <button className={w.btn} onClick={() => alert("Скоро: История рабочего времени")}>История рабочего времени</button>
-            <button className={w.btn} onClick={() => alert("Скоро: Фотоотчёт")}>Добавить фотоотчёт</button>
-            <button className={w.btn} onClick={() => alert("Скоро: Мои данные")}>Мой профиль</button>
-          </div>
-        ) : profile.role === "accountant" ? (
-          <div className={a.actions}>
-            <Link className={a.btnLight} href="/workday">Просмотр рабочих дней</Link>
-            <button className={a.btnLight} onClick={() => alert("Скоро: Отчёты/Экспорт")}>Отчёты (месяц)</button>
-          </div>
-        ) : (
-          <div className={m.actions}>
-            <Link className={m.btnLight} href="/admin">Активация пользователей</Link>
-            <Link className={m.btnLight} href="/workday">Рабочие логи</Link>
-            {isManager ? (
-              <button className={m.btn} onClick={() => alert("Скоро: Управление сайтом/кнопками")}>
-                Управление сайтом
-              </button>
-            ) : null}
-          </div>
-        )}
+        {/* КНОПКИ (вместо “голых” ссылок) */}
+        <div className={s.actionsGrid}>
+          <Link className={s.actionBtn} href="/workday">
+            Отметка рабочего дня
+          </Link>
+
+          <Link className={s.actionBtn} href="/workday?tab=history">
+            История рабочего времени
+          </Link>
+
+          <button className={s.actionBtn} type="button" onClick={() => alert("Скоро сделаем")}>
+            Добавить фотоотчёт
+          </button>
+
+          <button className={s.actionBtn} type="button" onClick={() => alert("Скоро сделаем")}>
+            Мой профиль
+          </button>
+        </div>
 
         {msg ? <div className={s.msg}>{msg}</div> : null}
 
         <div className={s.footerRow}>
-          <button onClick={handleLogout} className={s.btnSecondary}>Выйти</button>
-          <Link href="/" className={s.link}>На главную</Link>
+          <button onClick={handleLogout} className={s.secondaryBtn} type="button">
+            Выйти
+          </button>
+
+          <Link href="/" className={s.backLink}>
+            На главную
+          </Link>
         </div>
       </div>
     </main>
