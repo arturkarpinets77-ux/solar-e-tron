@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -6,7 +6,10 @@ import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
-import s from "../styles/worker.module.css";
+// CSS Modules (разные роли = разные стили, но сейчас одинаковые по базе)
+import workerStyles from "../styles/worker.module.css";
+import managerStyles from "../styles/manager.module.css";
+import accountantStyles from "../styles/accountant.module.css";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -20,7 +23,6 @@ export default function DashboardPage() {
 
     const unsub = onAuthStateChanged(auth, async (user) => {
       setMsg("");
-
       if (!user) {
         router.replace("/login");
         return;
@@ -46,11 +48,15 @@ export default function DashboardPage() {
           String(data.surname || "").trim() ||
           "";
 
+        const role = String(data.role || "").trim().toLowerCase();
+        const status = String(data.status || "").trim().toLowerCase();
+
         setProfile({
+          uid: user.uid,
           email: String(data.email || user.email || "").trim(),
           personalNumber: String(data.personalNumber || "").trim(),
-          role: String(data.role || "").trim(),
-          status: String(data.status || "").trim(),
+          role,
+          status,
           firstName,
           lastName,
         });
@@ -64,6 +70,13 @@ export default function DashboardPage() {
     return () => unsub();
   }, [router]);
 
+  const styles = useMemo(() => {
+    const role = (profile?.role || "").toLowerCase();
+    if (role === "admin" || role === "director" || role === "manager") return managerStyles;
+    if (role === "accountant") return accountantStyles;
+    return workerStyles;
+  }, [profile?.role]);
+
   async function handleLogout() {
     try {
       await signOut(auth);
@@ -75,74 +88,88 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <main className={s.page}>
-        <div className={s.card}>Загрузка...</div>
+      <main className={styles.page}>
+        <div className={styles.card}>Загрузка...</div>
       </main>
     );
   }
 
   if (!profile) {
     return (
-      <main className={s.page}>
-        <div className={s.card}>Профиль не найден</div>
+      <main className={styles.page}>
+        <div className={styles.card}>Профиль не найден</div>
       </main>
     );
   }
 
   return (
-    <main className={s.page}>
-      <div className={s.card}>
-        <h1 className={s.title}>Кабинет</h1>
-        <div className={s.sub}>Solar E-Tron</div>
-
-        <div className={s.profileBox}>
+    <main className={styles.page}>
+      <div className={styles.card}>
+        <div className={styles.header}>
           <div>
-            <b>Имя:</b> {profile.firstName || "-"}
-          </div>
-          <div>
-            <b>Фамилия:</b> {profile.lastName || "-"}
-          </div>
-          <div>
-            <b>E-mail:</b> {profile.email || "-"}
-          </div>
-          <div>
-            <b>Личный номер:</b> {profile.personalNumber || "-"}
-          </div>
-          <div>
-            <b>Роль:</b> {profile.role || "-"}
-          </div>
-          <div>
-            <b>Статус:</b> {profile.status || "-"}
+            <div className={styles.title}>Кабинет</div>
+            <div className={styles.subtitle}>Solar E-Tron</div>
           </div>
         </div>
 
-        {/* КНОПКИ (вместо “голых” ссылок) */}
-        <div className={s.actionsGrid}>
-          <Link className={s.actionBtn} href="/workday">
+        <div className={styles.infoBox}>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Имя:</span>
+            <span className={styles.value}>{profile.firstName || "-"}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Фамилия:</span>
+            <span className={styles.value}>{profile.lastName || "-"}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>E-mail:</span>
+            <span className={styles.value}>{profile.email || "-"}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Личный номер:</span>
+            <span className={styles.value}>{profile.personalNumber || "-"}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Роль:</span>
+            <span className={styles.value}>{profile.role || "-"}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Статус:</span>
+            <span className={styles.value}>{profile.status || "-"}</span>
+          </div>
+        </div>
+
+        <div className={styles.actions}>
+          <Link href="/workday" className={styles.actionBtn}>
             Отметка рабочего дня
           </Link>
 
-          <Link className={s.actionBtn} href="/workday?tab=history">
-            История рабочего времени
-          </Link>
-
-          <button className={s.actionBtn} type="button" onClick={() => alert("Скоро сделаем")}>
+          <button className={styles.actionBtn} type="button" disabled>
             Добавить фотоотчёт
           </button>
 
-          <button className={s.actionBtn} type="button" onClick={() => alert("Скоро сделаем")}>
+          <button className={styles.actionBtn} type="button" disabled>
+            История рабочего времени
+          </button>
+
+          <button className={styles.actionBtn} type="button" disabled>
             Мой профиль
           </button>
         </div>
 
-        {msg ? <div className={s.msg}>{msg}</div> : null}
+        {msg ? <div className={styles.msg}>{msg}</div> : null}
 
-        <div className={s.footerRow}>
-          <button onClick={handleLogout} className={s.secondaryBtn} type="button">
+        <div className={styles.footer}>
+          <button onClick={handleLogout} className={styles.btnSecondary} type="button">
             Выйти
           </button>
 
-          <Link href="/" className={s.backLink}>
+          <Link href="/" className={styles.link}>
             На главную
           </Link>
         </div>
