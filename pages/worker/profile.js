@@ -1,65 +1,75 @@
 // pages/worker/profile.js
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import { auth, db, storage } from "../../lib/firebaseClient";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth, db } from "../../lib/firebaseClient";
+import { onAuthStateChanged } from "firebase/auth";
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
-  getDocs,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  limit,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
+import { getApps, getApp } from "firebase/app";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import styles from "../../styles/worker.module.css";
+import typo from "../../styles/typography.module.css";
 
-function safeFileName(name) {
-  return String(name || "file")
-    .replace(/[^\w.\-() ]+/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 120);
+function fmtDate(yyyyMmDd) {
+  if (!yyyyMmDd) return "-";
+  // ожидаем "YYYY-MM-DD"
+  return yyyyMmDd;
 }
 
 export default function WorkerProfilePage() {
   const router = useRouter();
 
+  const storage = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    if (!getApps().length) return null;
+    return getStorage(getApp());
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
+  const [user, setUser] = useState(null);
+
   const [profile, setProfile] = useState(null);
 
-  const [docsLoading, setDocsLoading] = useState(false);
-  const [docs, setDocs] = useState([]);
-
-  // form
+  // форма документа
   const [docTitle, setDocTitle] = useState("");
-  const [expiresAt, setExpiresAt] = useState(""); // YYYY-MM-DD
+  const [expiryDate, setExpiryDate] = useState(""); // YYYY-MM-DD
   const [file, setFile] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // список документов
+  const [docsList, setDocsList] = useState([]);
 
   useEffect(() => {
     if (!auth || !db) return;
 
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsubAuth = onAuthStateChanged(auth, async (u) => {
       setMsg("");
       setLoading(true);
 
-      if (!user) {
+      if (!u) {
         router.replace("/login");
         return;
       }
 
+      setUser(u);
+
       try {
-        const snap = await getDoc(doc(db, "Users", user.uid));
+        const snap = await getDoc(doc(db, "Users", u.uid));
         if (!snap.exists()) {
-          await signOut(auth);
           router.replace("/login");
           return;
         }
@@ -68,21 +78,31 @@ export default function WorkerProfilePage() {
         const role = String(data.role || "").trim().toLowerCase();
         const status = String(data.status || "").trim().toLowerCase();
 
-        if (status !== "active" || role !== "worker") {
+        // только worker + active
+        if (role !== "worker" || status !== "active") {
           router.replace("/dashboard");
           return;
         }
 
+        const firstName =
+          String(data.firstName || "").trim() ||
+          String(data.name || "").trim() ||
+          "";
+
+        const lastName =
+          String(data.lastName || "").trim() ||
+          String(data.surname || "").trim() ||
+          "";
+
         setProfile({
-          uid: user.uid,
-          firstName: String(data.firstName || "").trim(),
-          lastName: String(data.lastName || "").trim(),
-          email: String(data.email || user.email || "").trim(),
+          uid: u.uid,
+          email: String(data.email || u.email || "").trim(),
           personalNumber: String(data.personalNumber || "").trim(),
           role,
           status,
+          firstName,
+          lastName,
         });
-
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки профиля");
       } finally {
@@ -90,87 +110,98 @@ export default function WorkerProfilePage() {
       }
     });
 
-    return () => unsub();
+    return () => unsubAuth();
   }, [router]);
 
-  async function loadMyDocs(uid) {
-    if (!db || !uid) return;
-    setDocsLoading(true);
-    try {
-      const col = collection(db, "Users", uid, "Documents");
-      const q = query(col, orderBy("createdAt", "desc"), limit(40));
-      const snap = await getDocs(q);
-      setDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    } catch (e) {
-      setMsg(e?.message || "Ошибка загрузки документов");
-    } finally {
-      setDocsLoading(false);
-    }
-  }
-
+  // подписка на Documents
   useEffect(() => {
-    if (!profile?.uid) return;
-    loadMyDocs(profile.uid);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.uid]);
+    if (!db || !user?.uid) return;
 
-  async function handleAddDoc(e) {
+    const q = query(
+      collection(db, "Users", user.uid, "Documents"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubDocs = onSnapshot(
+      q,
+      (snap) => {
+        const items = [];
+        snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
+        setDocsList(items);
+      },
+      (err) => setMsg(err?.message || "Ошибка чтения документов")
+    );
+
+    return () => unsubDocs();
+  }, [user?.uid]);
+
+  async function handleUploadDoc(e) {
     e.preventDefault();
     setMsg("");
 
-    if (!storage || !db) return setMsg("Firebase не инициализирован");
-    if (!profile?.uid) return setMsg("Нет профиля");
-    if (!docTitle.trim()) return setMsg("Укажи название документа");
-    if (!expiresAt) return setMsg("Укажи срок действия (дату)");
-    if (!file) return setMsg("Выбери файл");
+    if (!db || !user?.uid) return setMsg("Нет пользователя.");
+    if (!storage) return setMsg("Storage не инициализирован (обнови страницу).");
 
-    setBusy(true);
+    const title = docTitle.trim();
+    if (!title) return setMsg("Укажи название документа.");
+    if (!expiryDate) return setMsg("Укажи срок действия (дату).");
+    if (!file) return setMsg("Выбери файл.");
+
+    setUploading(true);
+
     try {
-      const uid = profile.uid;
-
       // 1) создаём docId заранее
-      const docId = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now());
-      const fileName = safeFileName(file.name);
+      const newDocRef = doc(collection(db, "Users", user.uid, "Documents"));
+      const docId = newDocRef.id;
 
-      // Storage: Users/{uid}/Documents/{docId}/{fileName}
-      const storagePath = `Users/${uid}/Documents/${docId}/${fileName}`;
-      const fileRef = ref(storage, storagePath);
+      // 2) пишем метаданные (без url, пока грузим)
+      await setDoc(newDocRef, {
+        title,
+        expiryDate, // YYYY-MM-DD
+        fileName: file.name,
+        contentType: file.type || "",
+        size: file.size || 0,
+        storagePath: `Users/${user.uid}/Documents/${docId}/${file.name}`,
+        url: "",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-      await uploadBytes(fileRef, file, {
+      // 3) грузим в Storage
+      const storageRef = ref(
+        storage,
+        `Users/${user.uid}/Documents/${docId}/${file.name}`
+      );
+      await uploadBytes(storageRef, file, {
         contentType: file.type || "application/octet-stream",
       });
 
-      const url = await getDownloadURL(fileRef);
-
-      // 2) Firestore: Users/{uid}/Documents/{docId}
-      await setDoc(doc(db, "Users", uid, "Documents", docId), {
-        title: docTitle.trim(),
-        expiresAt, // строка YYYY-MM-DD (пока так проще)
-        storagePath,
-        fileName,
-        contentType: file.type || null,
-        size: file.size || null,
+      // 4) получаем ссылку и дописываем
+      const url = await getDownloadURL(storageRef);
+      await updateDoc(newDocRef, {
         url,
-        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
+      // 5) чистим форму
       setDocTitle("");
-      setExpiresAt("");
+      setExpiryDate("");
       setFile(null);
 
-      setMsg("Документ добавлен ✅");
-      await loadMyDocs(uid);
-    } catch (e2) {
-      setMsg(e2?.message || "Ошибка добавления документа");
+      // сброс input file (чтобы в UI стало "файл не выбран")
+      const inp = document.getElementById("docFileInput");
+      if (inp) inp.value = "";
+    } catch (e) {
+      setMsg(e?.message || "Ошибка загрузки документа");
     } finally {
-      setBusy(false);
+      setUploading(false);
     }
   }
 
   if (loading) {
     return (
       <main className={styles.page}>
-        <div className={styles.card}>Загрузка...</div>
+        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
       </main>
     );
   }
@@ -178,127 +209,160 @@ export default function WorkerProfilePage() {
   if (!profile) {
     return (
       <main className={styles.page}>
-        <div className={styles.card}>Профиль не найден</div>
+        <div className={`${styles.card} ${typo.base}`}>Профиль не найден</div>
       </main>
     );
   }
 
   return (
     <main className={styles.page}>
-      <div className={styles.card}>
+      <div className={`${styles.card} ${typo.base}`}>
         <div className={styles.header}>
-          <h1 className={styles.title}>Мой профиль</h1>
-          <p className={styles.subtitle}>Solar E-Tron</p>
+          <div>
+            <div className={`${styles.title} ${typo.title}`}>Мой профиль</div>
+            <div className={styles.subtitle}>Solar E-Tron</div>
+          </div>
         </div>
 
         <div className={styles.infoBox}>
-          <div className={styles.infoGrid}>
-            <div className={styles.label}>Имя</div>
-            <div className={styles.value}>{profile.firstName || "-"}</div>
-
-            <div className={styles.label}>Фамилия</div>
-            <div className={styles.value}>{profile.lastName || "-"}</div>
-
-            <div className={styles.label}>E-mail</div>
-            <div className={styles.value}>{profile.email || "-"}</div>
-
-            <div className={styles.label}>Личный номер</div>
-            <div className={styles.value}>{profile.personalNumber || "-"}</div>
-
-            <div className={styles.label}>Роль</div>
-            <div className={styles.value}>{profile.role || "-"}</div>
-
-            <div className={styles.label}>Статус</div>
-            <div className={styles.value}>{profile.status || "-"}</div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Имя</span>
+            <span className={styles.value}>{profile.firstName || "-"}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Фамилия</span>
+            <span className={styles.value}>{profile.lastName || "-"}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>E-mail</span>
+            <span className={styles.value}>{profile.email || "-"}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Личный номер</span>
+            <span className={styles.value}>{profile.personalNumber || "-"}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Роль</span>
+            <span className={styles.value}>{profile.role || "-"}</span>
+          </div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Статус</span>
+            <span className={styles.value}>{profile.status || "-"}</span>
           </div>
         </div>
 
         <div className={styles.divider} />
 
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>Мои документы</div>
+        <h3 style={{ margin: "10px 0 8px" }}>Мои документы</h3>
 
-        <form onSubmit={handleAddDoc} style={{ display: "grid", gap: 10 }}>
-          <input
-            value={docTitle}
-            onChange={(e) => setDocTitle(e.target.value)}
-            placeholder="Название (например: Пожарная карта)"
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(15,23,42,0.18)",
-              background: "rgba(255,255,255,0.85)",
-              outline: "none",
-            }}
-          />
+        <form onSubmit={handleUploadDoc}>
+          <div style={{ display: "grid", gap: 10 }}>
+            <input
+              value={docTitle}
+              onChange={(e) => setDocTitle(e.target.value)}
+              placeholder="Название (например: Пожарная карта)"
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.15)",
+                background: "rgba(255,255,255,0.9)",
+              }}
+            />
 
-          <input
-            type="date"
-            value={expiresAt}
-            onChange={(e) => setExpiresAt(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(15,23,42,0.18)",
-              background: "rgba(255,255,255,0.85)",
-              outline: "none",
-            }}
-          />
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              placeholder="Срок действия"
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.15)",
+                background: "rgba(255,255,255,0.9)",
+              }}
+            />
 
-          <input
-            type="file"
-            onChange={(e) => setFile((e.target.files && e.target.files[0]) || null)}
-          />
+            <input
+              id="docFileInput"
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.15)",
+                background: "rgba(255,255,255,0.9)",
+              }}
+            />
 
-          <button
-            className={styles.actionButton}
-            type="submit"
-            disabled={busy}
-            style={{ opacity: busy ? 0.6 : 1 }}
-          >
-            {busy ? "Загрузка..." : "Добавить документ"}
-          </button>
+            <button
+              className={styles.actionButton}
+              type="submit"
+              disabled={uploading}
+              style={{ opacity: uploading ? 0.6 : 1 }}
+            >
+              {uploading ? "Загрузка..." : "Добавить документ"}
+            </button>
+          </div>
         </form>
 
         {msg ? <div className={styles.msg}>{msg}</div> : null}
 
-        <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ fontWeight: 700 }}>Список документов</div>
+        <div className={styles.divider} />
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <h3 style={{ margin: 0 }}>Список документов</h3>
           <button
-            className={styles.btnSecondary}
             type="button"
-            onClick={() => loadMyDocs(profile.uid)}
-            disabled={docsLoading}
-            style={{ opacity: docsLoading ? 0.6 : 1 }}
+            className={styles.btnSecondary}
+            onClick={() => setMsg("")}
+            title="Список обновляется автоматически"
           >
             Обновить
           </button>
         </div>
 
-        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-          {docs.map((d) => (
-            <div
-              key={d.id}
-              style={{
-                borderRadius: 14,
-                border: "1px solid rgba(15,23,42,0.12)",
-                background: "rgba(255,255,255,0.85)",
-                padding: 12,
-              }}
-            >
-              <div style={{ fontWeight: 800 }}>{d.title || "Документ"}</div>
-              <div style={{ opacity: 0.75, marginTop: 4 }}>
-                Срок действия до: <b>{d.expiresAt || "-"}</b>
-              </div>
-              {d.url ? (
-                <a href={d.url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 6 }}>
-                  Открыть файл
-                </a>
-              ) : null}
+        <div style={{ marginTop: 10 }}>
+          {docsList.length === 0 ? (
+            <div style={{ opacity: 0.8 }}>Пока нет документов</div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {docsList.map((d) => (
+                <div
+                  key={d.id}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    border: "1px solid rgba(15,23,42,0.10)",
+                    background: "rgba(255,255,255,0.85)",
+                    display: "grid",
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ fontWeight: 800 }}>{d.title || "Документ"}</div>
+                  <div style={{ opacity: 0.85 }}>
+                    Срок действия: <b>{fmtDate(d.expiryDate)}</b>
+                  </div>
+                  <div style={{ opacity: 0.85 }}>
+                    Файл:{" "}
+                    {d.url ? (
+                      <a
+                        href={d.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontWeight: 800 }}
+                      >
+                        открыть
+                      </a>
+                    ) : (
+                      <span>(ссылка ещё не готова)</span>
+                    )}
+                  </div>
+                  {/* Удаление здесь НЕ показываем (по твоей логике — только директор/админ) */}
+                </div>
+              ))}
             </div>
-          ))}
-          {!docs.length ? <div style={{ opacity: 0.7 }}>Пока нет документов</div> : null}
+          )}
         </div>
 
         <div className={styles.footer}>
