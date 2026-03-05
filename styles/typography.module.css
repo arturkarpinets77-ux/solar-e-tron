@@ -1,0 +1,17 @@
+/* styles/typography.module.css */
+/* ЕДИНЫЙ стиль текста для всего сайта (как на главной) */
+
+.base {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  color: #0f172a;
+}
+
+.title {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.text {
+  font-family: Georgia, "Times New Roman", Times, serif;
+}
