@@ -6,9 +6,7 @@ import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
-// Стили (CSS Modules)
-import workerStyles from "../../styles/worker.module.css";
-import typography from "../../styles/typography.module.css";
+import styles from "../../styles/worker.module.css";
 
 export default function WorkerProfilePage() {
   const router = useRouter();
@@ -75,72 +73,57 @@ export default function WorkerProfilePage() {
     }
   }
 
-  if (loading) {
-    return (
-      <main className={workerStyles.page}>
-        <div className={workerStyles.card}>Загрузка...</div>
-      </main>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <main className={workerStyles.page}>
-        <div className={workerStyles.card}>Профиль не найден</div>
-      </main>
-    );
-  }
-
   return (
-    <main className={workerStyles.page}>
-      <div className={workerStyles.card}>
-        <div className={typography.h1}>Мой профиль</div>
-        <div className={typography.sub}>Solar E-Tron</div>
+    <main className={styles.page}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>Мой профиль</h1>
+        <div className={styles.subtitle}>Solar E-Tron</div>
 
-        <div className={workerStyles.infoBox}>
-          <div className={workerStyles.infoRow}>
-            <span className={workerStyles.label}>Имя:</span>
-            <span className={workerStyles.value}>{profile.firstName || "-"}</span>
-          </div>
+        {loading ? (
+          <div className={styles.note}>Загрузка...</div>
+        ) : !profile ? (
+          <div className={styles.note}>Профиль не найден</div>
+        ) : (
+          <>
+            <div className={styles.profileBox}>
+              <div className={styles.row}>
+                <span className={styles.label}>Имя:</span>
+                <span className={styles.value}>{profile.firstName || "-"}</span>
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>Фамилия:</span>
+                <span className={styles.value}>{profile.lastName || "-"}</span>
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>E-mail:</span>
+                <span className={styles.value}>{profile.email || "-"}</span>
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>Личный номер:</span>
+                <span className={styles.value}>{profile.personalNumber || "-"}</span>
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>Роль:</span>
+                <span className={styles.value}>{profile.role || "-"}</span>
+              </div>
+              <div className={styles.row}>
+                <span className={styles.label}>Статус:</span>
+                <span className={styles.value}>{profile.status || "-"}</span>
+              </div>
+            </div>
 
-          <div className={workerStyles.infoRow}>
-            <span className={workerStyles.label}>Фамилия:</span>
-            <span className={workerStyles.value}>{profile.lastName || "-"}</span>
-          </div>
+            {msg ? <div className={styles.msg}>{msg}</div> : null}
+          </>
+        )}
 
-          <div className={workerStyles.infoRow}>
-            <span className={workerStyles.label}>E-mail:</span>
-            <span className={workerStyles.value}>{profile.email || "-"}</span>
-          </div>
-
-          <div className={workerStyles.infoRow}>
-            <span className={workerStyles.label}>Личный номер:</span>
-            <span className={workerStyles.value}>{profile.personalNumber || "-"}</span>
-          </div>
-
-          <div className={workerStyles.infoRow}>
-            <span className={workerStyles.label}>Роль:</span>
-            <span className={workerStyles.value}>{profile.role || "-"}</span>
-          </div>
-
-          <div className={workerStyles.infoRow}>
-            <span className={workerStyles.label}>Статус:</span>
-            <span className={workerStyles.value}>{profile.status || "-"}</span>
-          </div>
-        </div>
-
-        {msg ? <div className={workerStyles.msg}>{msg}</div> : null}
-
-        <div className={workerStyles.footerRow}>
-          <button onClick={handleLogout} className={workerStyles.btnSecondary}>
+        <div className={styles.actions}>
+          <button onClick={handleLogout} className={styles.btnSecondary}>
             Выйти
           </button>
-
-          <Link href="/worker" className={workerStyles.link}>
+          <Link href="/worker" className={styles.link}>
             ← Назад
           </Link>
-
-          <Link href="/" className={workerStyles.link}>
+          <Link href="/" className={styles.link}>
             На главную
           </Link>
         </div>
