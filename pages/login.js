@@ -1,3 +1,4 @@
+// pages/login.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -11,6 +12,10 @@ import {
   signOut,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+
+const LS_REMEMBER = "rememberMe";
+const LS_PN = "rememberPersonalNumber";
+const LS_EMAIL = "rememberEmail";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,6 +34,36 @@ export default function LoginPage() {
   useEffect(() => {
     setMsg("");
   }, [personalNumber, email, remember]);
+
+  // 1) При открытии /login: подставляем сохранённые поля (если remember=true)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const r = localStorage.getItem(LS_REMEMBER);
+    const isRemember = r === null ? true : r === "1";
+    setRemember(isRemember);
+
+    if (isRemember) {
+      setPersonalNumber(localStorage.getItem(LS_PN) || "");
+      setEmail(localStorage.getItem(LS_EMAIL) || "");
+    }
+  }, []);
+
+  // 2) При изменениях: сохраняем/очищаем localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    localStorage.setItem(LS_REMEMBER, remember ? "1" : "0");
+
+    if (remember) {
+      localStorage.setItem(LS_PN, personalNumber);
+      localStorage.setItem(LS_EMAIL, email);
+    } else {
+      // если сняли галочку — сразу очищаем сохранённые поля
+      localStorage.removeItem(LS_PN);
+      localStorage.removeItem(LS_EMAIL);
+    }
+  }, [remember, personalNumber, email]);
 
   useEffect(() => {
     if (router.query.registered === "1") {
@@ -52,18 +87,18 @@ export default function LoginPage() {
     try {
       if (!auth || !db) throw new Error("Firebase не инициализирован.");
 
+      // Firebase Auth persistence (логин-сессия)
       await setPersistence(
         auth,
         remember ? browserLocalPersistence : browserSessionPersistence
       );
 
-      // Пароль = email (по твоей текущей логике)
+      // Пароль = email (как у тебя)
       const cred = await signInWithEmailAndPassword(auth, em, em);
 
       const uid = cred.user.uid;
       const snap = await getDoc(doc(db, "Users", uid));
 
-      // НИКАКОГО автосоздания профиля: если нет документа — значит не зарегистрирован
       if (!snap.exists()) {
         await signOut(auth);
         throw new Error("Пользователь не зарегистрирован. Нажмите «Регистрация».");
@@ -74,16 +109,20 @@ export default function LoginPage() {
       const dbPN = String(data.personalNumber || "").trim();
       const status = String(data.status || "").trim().toLowerCase();
 
-      // Проверка соответствия введённых данных профилю
       if (dbEmail !== em || dbPN !== pn) {
         await signOut(auth);
         throw new Error("Неверный личный номер или e-mail.");
       }
 
-      // Проверка статуса
       if (status !== "active") {
         await signOut(auth);
         throw new Error("Профиль ещё не активирован директором/админом.");
+      }
+
+      // Если remember=false — НЕ храним поля (но сессия будет до закрытия браузера)
+      if (typeof window !== "undefined" && !remember) {
+        localStorage.removeItem(LS_PN);
+        localStorage.removeItem(LS_EMAIL);
       }
 
       router.push("/dashboard");
