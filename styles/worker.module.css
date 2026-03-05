@@ -1,18 +1,15 @@
-/* =========================
-   Worker UI (единый стиль)
-   ========================= */
+/* styles/worker.module.css */
+/* Оформление только кабинета worker (без font-family — он в typography) */
 
-/* Обёртка страницы */
 .page {
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 28px 16px;
-  background: transparent; /* фон даёт background.css */
+  background: transparent;
 }
 
-/* Основная карточка: БЕЛАЯ, читаемая, с мягкой тенью */
 .card {
   width: 100%;
   max-width: 980px;
@@ -21,13 +18,8 @@
   padding: 22px 22px 18px;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.55);
-
-  /* ВАЖНО: одинаковый шрифт (как на главной — аккуратный serif) */
-  font-family: Georgia, "Times New Roman", Times, serif;
-  color: #0f172a;
 }
 
-/* Верхняя часть */
 .header {
   display: flex;
   justify-content: space-between;
@@ -38,7 +30,6 @@
 .title {
   font-size: 44px;
   line-height: 1.05;
-  letter-spacing: 0.3px;
   margin: 0;
 }
 
@@ -48,13 +39,12 @@
   color: rgba(15, 23, 42, 0.6);
 }
 
-/* Блок информации */
 .infoBox {
   margin-top: 16px;
   padding: 16px 16px;
   border-radius: 16px;
   border: 1px solid rgba(15, 23, 42, 0.10);
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .infoRow {
@@ -73,7 +63,6 @@
   font-weight: 500;
 }
 
-/* Кнопки действий (4 штуки) */
 .actions {
   margin-top: 18px;
   display: grid;
@@ -91,8 +80,8 @@
   border-radius: 14px;
   border: 1px solid rgba(15, 23, 42, 0.14);
 
-  background: rgba(255, 255, 255, 0.78);
-  color: rgba(15, 23, 42, 0.88);
+  background: rgba(255, 255, 255, 0.82);
+  color: rgba(15, 23, 42, 0.90);
 
   font-weight: 700;
   font-size: 16px;
@@ -103,7 +92,7 @@
 
 .actionBtn:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
 }
 
@@ -112,17 +101,15 @@
   cursor: not-allowed;
 }
 
-/* Сообщения */
 .msg {
   margin-top: 14px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(15, 23, 42, 0.10);
   color: rgba(15, 23, 42, 0.92);
 }
 
-/* Нижняя панель */
 .footer {
   margin-top: 16px;
   display: flex;
@@ -134,30 +121,19 @@
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.18);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.86);
   cursor: pointer;
   font-weight: 700;
-  font-family: inherit;
 }
 
 .link {
   color: #1e40af;
   text-decoration: none;
   font-weight: 700;
-  font-family: inherit;
 }
 
-/* Адаптив */
 @media (max-width: 780px) {
-  .title {
-    font-size: 34px;
-  }
-
-  .infoRow {
-    grid-template-columns: 140px 1fr;
-  }
-
-  .actions {
-    grid-template-columns: 1fr;
-  }
+  .title { font-size: 34px; }
+  .infoRow { grid-template-columns: 140px 1fr; }
+  .actions { grid-template-columns: 1fr; }
 }
