@@ -1,113 +1,163 @@
-/* Worker кабинет: стили только для этой страницы */
+/* =========================
+   Worker UI (единый стиль)
+   ========================= */
 
+/* Обёртка страницы */
 .page {
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 32px 16px;
+  padding: 28px 16px;
+  background: transparent; /* фон даёт background.css */
 }
 
+/* Основная карточка: БЕЛАЯ, читаемая, с мягкой тенью */
 .card {
-  width: min(980px, 100%);
+  width: 100%;
+  max-width: 980px;
   background: rgba(255, 255, 255, 0.92);
+  border-radius: 22px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.55);
-  border-radius: 18px;
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.18);
-  padding: 22px;
-  backdrop-filter: none; /* чтобы не “мылить” */
+
+  /* ВАЖНО: одинаковый шрифт (как на главной — аккуратный serif) */
+  font-family: Georgia, "Times New Roman", Times, serif;
+  color: #0f172a;
+}
+
+/* Верхняя часть */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .title {
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: 0.3px;
   margin: 0;
-  font-size: 40px;
-  line-height: 1.1;
 }
 
-.sub {
+.subtitle {
   margin-top: 6px;
-  opacity: 0.75;
+  font-size: 16px;
+  color: rgba(15, 23, 42, 0.6);
 }
 
-.profileBox {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.75);
-  line-height: 1.85;
-}
-
-/* Сетка действий: исправляет “уехавшие” элементы и делает все кнопками */
-.actionsGrid {
+/* Блок информации */
+.infoBox {
   margin-top: 16px;
+  padding: 16px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.infoRow {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.label {
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.value {
+  font-weight: 500;
+}
+
+/* Кнопки действий (4 штуки) */
+.actions {
+  margin-top: 18px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
 
-@media (max-width: 720px) {
-  .actionsGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .actionBtn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-
-  width: 100%;
-  min-height: 48px;
-
-  padding: 12px 14px;
-  border-radius: 14px;
-
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: rgba(255, 255, 255, 0.85);
-
   text-decoration: none;
-  color: #0f172a;
-  font-weight: 800;
 
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+
+  background: rgba(255, 255, 255, 0.78);
+  color: rgba(15, 23, 42, 0.88);
+
+  font-weight: 700;
+  font-size: 16px;
   cursor: pointer;
-  user-select: none;
 
-  transition: transform 0.08s ease, box-shadow 0.12s ease, background 0.12s ease;
+  transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
 .actionBtn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
 }
 
-.footerRow {
+.actionBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Сообщения */
+.msg {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  color: rgba(15, 23, 42, 0.92);
+}
+
+/* Нижняя панель */
+.footer {
   margin-top: 16px;
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.secondaryBtn {
+.btnSecondary {
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: rgba(255, 255, 255, 0.82);
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 700;
+  font-family: inherit;
 }
 
-.backLink {
-  font-weight: 800;
-  text-decoration: none;
+.link {
   color: #1e40af;
+  text-decoration: none;
+  font-weight: 700;
+  font-family: inherit;
 }
 
-.msg {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.06);
-  color: #0f172a;
+/* Адаптив */
+@media (max-width: 780px) {
+  .title {
+    font-size: 34px;
+  }
+
+  .infoRow {
+    grid-template-columns: 140px 1fr;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
 }
