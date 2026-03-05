@@ -131,23 +131,23 @@ export default function WorkerDashboard() {
           </div>
         </div>
 
-        <div className={styles.actions}>
-          <Link href="/workday" className={styles.actionBtn}>
-            Отметка рабочего дня
-          </Link>
+        <div className={styles.actionsGrid}>
+  <Link href="/workday" legacyBehavior>
+    <a className={styles.actionButton}>Отметка рабочего дня</a>
+  </Link>
 
-          <button className={styles.actionBtn} type="button" disabled>
-            Добавить фотоотчёт
-          </button>
+  <Link href="/worker/photo" legacyBehavior>
+    <a className={styles.actionButton}>Добавить фотоотчёт</a>
+  </Link>
 
-          <button className={styles.actionBtn} type="button" disabled>
-            История рабочего времени
-          </button>
+  <Link href="/worker/history" legacyBehavior>
+    <a className={styles.actionButton}>История рабочего времени</a>
+  </Link>
 
-          <Link href="/worker/profile" className={styles.actionBtn}>
-            Мой профиль
-          </Link>
-        </div>
+  <Link href="/worker/profile" legacyBehavior>
+    <a className={styles.actionButton}>Мой профиль</a>
+  </Link>
+</div>
 
         {msg ? <div className={styles.msg}>{msg}</div> : null}
 
