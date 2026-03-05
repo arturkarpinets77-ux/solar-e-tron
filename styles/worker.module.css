@@ -155,3 +155,32 @@
     grid-template-columns: 1fr;
   }
 }
+/* === ФИКС ЧИТАЕМОСТИ ТЕКСТА НА "СТЕКЛЕ" === */
+.card {
+  color: #0f172a; /* тёмный читаемый текст */
+}
+
+.title,
+.subtitle,
+.label,
+.value,
+.msg,
+.link,
+.btnSecondary,
+.actionButton {
+  color: #0f172a;
+}
+
+.subtitle,
+.label {
+  opacity: 0.78; /* чуть спокойнее, но видно */
+}
+
+/* ссылки (например "Назад", "На главную") */
+.link {
+  color: #1e40af;
+}
+
+.actionButton {
+  color: #0f172a; /* чтобы на кнопках не было "inherit" */
+}
