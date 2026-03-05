@@ -1,0 +1,4 @@
+.page { min-height: 100vh; padding: 40px 20px; background: transparent; display:flex; justify-content:center; align-items:flex-start; }
+.card { width:100%; max-width:980px; background:#ffffff; border-radius:18px; padding:22px; box-shadow:0 20px 55px rgba(0,0,0,0.18); border:1px solid rgba(0,0,0,0.06); color:#0f172a; }
+.title { margin:0; font-size:26px; font-weight:800; }
+.sub { margin-top:6px; color:#475569; font-size:14px; }
