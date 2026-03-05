@@ -1,34 +1,24 @@
-import { useEffect, useState, useMemo } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
-import workerStyles from "../styles/worker.module.css";
-import managerStyles from "../styles/manager.module.css";
-import accountantStyles from "../styles/accountant.module.css";
-import typo from "../styles/typography.module.css";
-
-export default function DashboardPage() {
+export default function DashboardRouter() {
   const router = useRouter();
-
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
-  const [profile, setProfile] = useState(null);
+  const [msg, setMsg] = useState("Загрузка...");
 
   useEffect(() => {
     if (!auth || !db) return;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      setMsg("");
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
-
       try {
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+
         const snap = await getDoc(doc(db, "Users", user.uid));
         if (!snap.exists()) {
           await signOut(auth);
@@ -37,139 +27,46 @@ export default function DashboardPage() {
         }
 
         const data = snap.data() || {};
+        const role = String(data.role || "").trim().toLowerCase();
+        const status = String(data.status || "").trim().toLowerCase();
 
-        const firstName =
-          String(data.firstName || "").trim() ||
-          String(data.name || "").trim() ||
-          "";
+        // Статус обязателен
+        if (status !== "active") {
+          await signOut(auth);
+          router.replace("/login");
+          return;
+        }
 
-        const lastName =
-          String(data.lastName || "").trim() ||
-          String(data.surname || "").trim() ||
-          "";
+        // Редирект по роли
+        if (role === "worker") {
+          router.replace("/worker");
+          return;
+        }
 
-        setProfile({
-          uid: user.uid,
-          email: String(data.email || user.email || "").trim(),
-          personalNumber: String(data.personalNumber || "").trim(),
-          role: String(data.role || "").trim().toLowerCase(),
-          status: String(data.status || "").trim().toLowerCase(),
-          firstName,
-          lastName,
-        });
+        if (role === "accountant") {
+          router.replace("/accountant"); // создадим позже
+          return;
+        }
+
+        if (role === "director" || role === "admin" || role === "manager") {
+          router.replace("/manager"); // создадим позже
+          return;
+        }
+
+        // Если роль неизвестна
+        setMsg("Неизвестная роль пользователя. Обратитесь к администратору.");
       } catch (e) {
-        setMsg(e?.message || "Ошибка загрузки профиля");
-      } finally {
-        setLoading(false);
+        setMsg(e?.message || "Ошибка распределителя кабинета");
       }
     });
 
     return () => unsub();
   }, [router]);
 
-  const styles = useMemo(() => {
-    const role = (profile?.role || "").toLowerCase();
-    if (role === "admin" || role === "director" || role === "manager") return managerStyles;
-    if (role === "accountant") return accountantStyles;
-    return workerStyles;
-  }, [profile?.role]);
-
-  async function handleLogout() {
-    try {
-      await signOut(auth);
-      router.replace("/");
-    } catch (e) {
-      setMsg(e?.message || "Ошибка выхода");
-    }
-  }
-
-  if (loading) {
-    return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
-      </main>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Профиль не найден</div>
-      </main>
-    );
-  }
-
   return (
-    <main className={styles.page}>
-      <div className={`${styles.card} ${typo.base}`}>
-        <div className={styles.header}>
-          <div>
-            <div className={`${styles.title} ${typo.title}`}>Кабинет</div>
-            <div className={styles.subtitle}>Solar E-Tron</div>
-          </div>
-        </div>
-
-        <div className={styles.infoBox}>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Имя:</span>
-            <span className={styles.value}>{profile.firstName || "-"}</span>
-          </div>
-
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Фамилия:</span>
-            <span className={styles.value}>{profile.lastName || "-"}</span>
-          </div>
-
-          <div className={styles.infoRow}>
-            <span className={styles.label}>E-mail:</span>
-            <span className={styles.value}>{profile.email || "-"}</span>
-          </div>
-
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Личный номер:</span>
-            <span className={styles.value}>{profile.personalNumber || "-"}</span>
-          </div>
-
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Роль:</span>
-            <span className={styles.value}>{profile.role || "-"}</span>
-          </div>
-
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Статус:</span>
-            <span className={styles.value}>{profile.status || "-"}</span>
-          </div>
-        </div>
-
-        <div className={styles.actions}>
-          <Link href="/workday" className={styles.actionBtn}>
-            Отметка рабочего дня
-          </Link>
-
-          <button className={styles.actionBtn} type="button" disabled>
-            Добавить фотоотчёт
-          </button>
-
-          <button className={styles.actionBtn} type="button" disabled>
-            История рабочего времени
-          </button>
-
-          <button className={styles.actionBtn} type="button" disabled>
-            Мой профиль
-          </button>
-        </div>
-
-        {msg ? <div className={styles.msg}>{msg}</div> : null}
-
-        <div className={styles.footer}>
-          <button onClick={handleLogout} className={styles.btnSecondary} type="button">
-            Выйти
-          </button>
-
-          <Link href="/" className={styles.link}>
-            На главную
-          </Link>
-        </div>
+    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
+      <div style={{ background: "rgba(255,255,255,0.9)", padding: 16, borderRadius: 12 }}>
+        {msg}
       </div>
     </main>
   );
