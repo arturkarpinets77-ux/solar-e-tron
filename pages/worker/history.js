@@ -18,6 +18,8 @@ import {
 import styles from "../../styles/worker.module.css";
 import typo from "../../styles/typography.module.css";
 
+const DEFAULT_BREAK_MINUTES = 30;
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
@@ -168,7 +170,15 @@ export default function WorkerHistoryPage() {
                 const bE = d.breakEndAt;
 
                 const total = minutesBetween(start, end);
-                const br = minutesBetween(bS, bE);
+
+                // Фактический перерыв (если отмечали)
+                const brActual = minutesBetween(bS, bE);
+
+                // Если перерыв НЕ отмечали вообще — вычитаем по умолчанию 30 минут (только для завершённого дня)
+                const noBreakMarked = !bS && !bE;
+                const shouldApplyDefault = !!end && noBreakMarked;
+
+                const br = shouldApplyDefault ? DEFAULT_BREAK_MINUTES : brActual;
                 const net = Math.max(0, total - br);
 
                 return (
@@ -221,7 +231,8 @@ export default function WorkerHistoryPage() {
                             {br ? (
                               <span style={{ opacity: 0.7 }}>
                                 {" "}
-                                (перерыв {fmtHM(br)})
+                                (перерыв {fmtHM(br)}
+                                {shouldApplyDefault ? " по умолчанию" : ""})
                               </span>
                             ) : null}
                           </>
