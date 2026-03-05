@@ -132,9 +132,9 @@ export default function WorkerDashboard() {
         </div>
 
         <div className={styles.actionsGrid}>
-  <Link href="/workday" legacyBehavior>
-    <a className={styles.actionButton}>Отметка рабочего дня</a>
-  </Link>
+  <Link href="/worker/workday" className={styles.actionButton}>
+  Отметка рабочего дня
+</Link>
 
   <Link href="/worker/photo" legacyBehavior>
     <a className={styles.actionButton}>Добавить фотоотчёт</a>
