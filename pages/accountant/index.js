@@ -352,7 +352,7 @@ export default function AccountantPage() {
         ];
 
         const lines = [
-          header.map(csvEscape).join(","),
+          header.map(csvEscape).join(";"),
           ...summaryRows.map((r) =>
             [
               r.name,
@@ -362,7 +362,7 @@ export default function AccountantPage() {
               fmtHM(r.totalMinutes),
             ]
               .map(csvEscape)
-              .join(",")
+              .join(";")
           ),
         ];
 
@@ -389,8 +389,8 @@ export default function AccountantPage() {
       const lines = [
         [workerName, selectedPerson?.personalNumber || "-", selectedPerson?.role || "-", monthValue]
           .map(csvEscape)
-          .join(","),
-        header.map(csvEscape).join(","),
+          .join(";"),
+        header.map(csvEscape).join(";"),
         ...rows.map((d) => {
           const calc = calcNetMinutes(d);
           return [
@@ -404,7 +404,7 @@ export default function AccountantPage() {
             d.endAt ? fmtHM(calc.net) : "-",
           ]
             .map(csvEscape)
-            .join(",");
+            .join(";");
         }),
         [
           csvEscape("Итого за месяц"),
@@ -415,7 +415,7 @@ export default function AccountantPage() {
           csvEscape(""),
           csvEscape(""),
           csvEscape(fmtHM(totalMinutes)),
-        ].join(","),
+        ].join(";"),
       ];
 
       downloadTextFile(
