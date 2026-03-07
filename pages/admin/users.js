@@ -1,182 +1,226 @@
-import { useEffect, useMemo, useState } from "react";
+// pages/admin/users.js
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
 import { auth, db } from "../../lib/firebaseClient";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  orderBy,
   query,
   updateDoc,
   where,
 } from "firebase/firestore";
 
+import styles from "../../styles/manager.module.css";
+import typo from "../../styles/typography.module.css";
+
 export default function AdminUsersPage() {
   const router = useRouter();
 
-  const [me, setMe] = useState(null);
-  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState("");
   const [msg, setMsg] = useState("");
-
-  const isPrivileged = useMemo(() => {
-    return me?.role === "admin" || me?.role === "director";
-  }, [me]);
+  const [users, setUsers] = useState([]);
 
   useEffect(() => {
+    if (!auth || !db) return;
+
     const unsub = onAuthStateChanged(auth, async (user) => {
+      setMsg("");
+      setLoading(true);
+
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
-      const mySnap = await getDoc(doc(db, "Users", user.uid));
-      if (!mySnap.exists()) {
-        router.push("/login");
-        return;
-      }
+      try {
+        const meSnap = await getDoc(doc(db, "Users", user.uid));
+        if (!meSnap.exists()) {
+          await signOut(auth);
+          router.replace("/login");
+          return;
+        }
 
-      const myData = mySnap.data();
-      if (String(myData.status) !== "active") {
-        router.push("/login");
-        return;
-      }
+        const me = meSnap.data() || {};
+        const role = String(me.role || "").trim().toLowerCase();
+        const status = String(me.status || "").trim().toLowerCase();
 
-      const role = String(myData.role || "");
-      if (role !== "admin" && role !== "director") {
-        router.push("/dashboard");
-        return;
-      }
+        if (status !== "active") {
+          router.replace("/dashboard");
+          return;
+        }
 
-      setMe({ uid: user.uid, ...myData });
-      setLoading(false);
+        if (role !== "admin" && role !== "director") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        await loadPendingUsers();
+      } catch (e) {
+        setMsg(e?.message || "Ошибка загрузки пользователей");
+      } finally {
+        setLoading(false);
+      }
     });
 
     return () => unsub();
   }, [router]);
 
-  async function loadPending() {
-    setMsg("");
-    const q = query(
-      collection(db, "Users"),
-      where("status", "==", "pending"),
-      orderBy("createdAt", "desc")
-    );
+  async function loadPendingUsers() {
+    if (!db) return;
 
+    const q = query(collection(db, "Users"), where("status", "==", "pending"));
     const snap = await getDocs(q);
-    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const list = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    list.sort((a, b) => {
+      const aName = `${a.firstName || ""} ${a.lastName || ""}`.trim();
+      const bName = `${b.firstName || ""} ${b.lastName || ""}`.trim();
+      return aName.localeCompare(bName);
+    });
+
     setUsers(list);
   }
 
-  useEffect(() => {
-    if (!loading && isPrivileged) loadPending();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, isPrivileged]);
-
-  async function setStatus(uid, status) {
+  async function approveUser(uid) {
     setMsg("");
+    setSavingId(uid);
+
     try {
       await updateDoc(doc(db, "Users", uid), {
-        status,
-        approvedBy: me.uid,
-        approvedAt: new Date(),
+        status: "active",
       });
-      await loadPending();
-      setMsg(status === "active" ? "Пользователь активирован." : "Пользователь отклонён.");
+
+      setMsg("Пользователь подтверждён.");
+      await loadPendingUsers();
     } catch (e) {
-      setMsg(e?.message || "Ошибка обновления статуса.");
+      setMsg(e?.message || "Ошибка подтверждения пользователя");
+    } finally {
+      setSavingId("");
     }
   }
 
-  if (loading) return <div style={{ padding: 24 }}>Загрузка...</div>;
+  if (loading) {
+    return (
+      <main className={styles.page}>
+        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
+      </main>
+    );
+  }
 
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <h1>Подтверждение пользователей</h1>
+    <main className={styles.page}>
+      <div className={`${styles.card} ${typo.base}`}>
+        <div className={styles.header}>
+          <div>
+            <div className={`${styles.title} ${typo.title}`}>
+              Подтверждение пользователей
+            </div>
+            <div className={styles.subtitle}>
+              Директор / администратор подтверждает новых работников
+            </div>
+          </div>
+        </div>
 
-      <div style={{ marginTop: 10 }}>
-        <button
-          onClick={loadPending}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            background: "#fff",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Обновить список
-        </button>
-      </div>
+        <div style={{ marginTop: 16 }}>
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={loadPendingUsers}
+          >
+            Обновить список
+          </button>
+        </div>
 
-      {msg ? <div style={{ marginTop: 12 }}>{msg}</div> : null}
+        {msg ? <div className={styles.msg}>{msg}</div> : null}
 
-      <div style={{ marginTop: 16 }}>
+        <div className={styles.divider} />
+
         {users.length === 0 ? (
-          <div>Нет пользователей со статусом pending.</div>
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 14,
+              border: "1px solid rgba(120, 90, 20, 0.16)",
+              background: "rgba(255, 252, 240, 0.82)",
+            }}
+          >
+            Нет пользователей со статусом <b>pending</b>.
+          </div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
-            {users.map((u) => (
-              <div
-                key={u.id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  padding: 12,
-                }}
-              >
-                <div><b>UID:</b> {u.id}</div>
-                <div><b>Имя:</b> {u.firstName || "-"}</div>
-                <div><b>Фамилия:</b> {u.lastName || "-"}</div>
-                <div><b>Email:</b> {u.email || "-"}</div>
-                <div><b>Личный номер:</b> {u.personalNumber || "-"}</div>
-                <div><b>Роль:</b> {u.role || "-"}</div>
-                <div><b>Статус:</b> {u.status || "-"}</div>
+            {users.map((u) => {
+              const fullName =
+                `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+                `${u.name || ""} ${u.surname || ""}`.trim() ||
+                "-";
 
-                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                  <button
-                    onClick={() => setStatus(u.id, "active")}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "none",
-                      background: "#16a34a",
-                      color: "#fff",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Активировать
-                  </button>
+              return (
+                <div
+                  key={u.id}
+                  style={{
+                    padding: 16,
+                    borderRadius: 14,
+                    border: "1px solid rgba(120, 90, 20, 0.16)",
+                    background: "rgba(255, 252, 240, 0.82)",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>
+                    {fullName}
+                  </div>
 
-                  <button
-                    onClick={() => setStatus(u.id, "disabled")}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "none",
-                      background: "#dc2626",
-                      color: "#fff",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Отклонить
-                  </button>
+                  <div>
+                    <b>E-mail:</b> {u.email || "-"}
+                  </div>
+
+                  <div>
+                    <b>Личный номер:</b> {u.personalNumber || "-"}
+                  </div>
+
+                  <div>
+                    <b>Роль:</b> {u.role || "-"}
+                  </div>
+
+                  <div>
+                    <b>Статус:</b> {u.status || "-"}
+                  </div>
+
+                  <div style={{ marginTop: 6 }}>
+                    <button
+                      type="button"
+                      className={styles.actionButton}
+                      onClick={() => approveUser(u.id)}
+                      disabled={savingId === u.id}
+                      style={{
+                        maxWidth: 260,
+                        opacity: savingId === u.id ? 0.6 : 1,
+                      }}
+                    >
+                      {savingId === u.id ? "Подтверждение..." : "Подтвердить"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
-      </div>
 
-      <div style={{ marginTop: 18 }}>
-        <Link href="/dashboard">← В кабинет</Link>
+        <div className={styles.footer}>
+          <Link className={styles.link} href="/manager">
+            ← В кабинет
+          </Link>
+        </div>
       </div>
     </main>
   );
