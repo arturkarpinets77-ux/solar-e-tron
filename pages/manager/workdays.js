@@ -1,4 +1,3 @@
-// pages/manager/workdays.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -33,6 +32,17 @@ function fullName(u) {
     u.email ||
     "-"
   );
+}
+
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "accountant") return "Бухгалтер";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+
+  return role || "-";
 }
 
 function tsToDate(ts) {
@@ -271,7 +281,6 @@ export default function ManagerWorkdaysPage() {
       payload.breakEndAt = formBreakEndAt ? new Date(formBreakEndAt) : null;
       payload.endAt = formEndAt ? new Date(formEndAt) : null;
 
-      // Автоматический статус, если поля заданы
       if (payload.endAt) {
         payload.status = "ended";
       } else if (payload.breakStartAt && !payload.breakEndAt) {
@@ -331,7 +340,7 @@ export default function ManagerWorkdaysPage() {
                   <option key={w.id} value={w.id}>
                     {fullName(w)}
                     {w.personalNumber ? ` — ${w.personalNumber}` : ""}
-                    {w.role ? ` — ${String(w.role).toLowerCase()}` : ""}
+                    {w.role ? ` — ${roleLabel(w.role)}` : ""}
                   </option>
                 ))}
               </select>
@@ -354,7 +363,7 @@ export default function ManagerWorkdaysPage() {
             <div style={{ marginTop: 10, opacity: 0.8 }}>
               <b>Выбран:</b> {fullName(selectedWorker)}
               {selectedWorker.personalNumber ? ` — ${selectedWorker.personalNumber}` : ""}
-              {selectedWorker.role ? ` — ${String(selectedWorker.role).toLowerCase()}` : ""}
+              {selectedWorker.role ? ` — ${roleLabel(selectedWorker.role)}` : ""}
             </div>
           ) : null}
         </div>
