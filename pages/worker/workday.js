@@ -4,453 +4,529 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import { auth, db } from "../../lib/firebaseClient";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
   doc,
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
-  serverTimestamp,
+  orderBy,
 } from "firebase/firestore";
 
 import styles from "../../styles/worker.module.css";
+import typo from "../../styles/typography.module.css";
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
 
 function dateKeyLocalYYYYMMDD() {
   const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-export default function WorkdayPage() {
+function toDateSafe(ts) {
+  if (!ts) return null;
+  try {
+    return ts.toDate ? ts.toDate() : new Date(ts);
+  } catch {
+    return null;
+  }
+}
+
+function timeLabel(ts) {
+  const d = toDateSafe(ts);
+  if (!d) return "-";
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371000;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function getCurrentPositionAsync() {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      reject(new Error("Геолокация не поддерживается этим устройством."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve(pos),
+      (err) => {
+        if (err?.code === 1) {
+          reject(new Error("Нет доступа к геолокации. Разреши доступ к местоположению."));
+          return;
+        }
+        if (err?.code === 2) {
+          reject(new Error("Не удалось определить местоположение."));
+          return;
+        }
+        if (err?.code === 3) {
+          reject(new Error("Превышено время ожидания геолокации."));
+          return;
+        }
+        reject(new Error("Ошибка получения геолокации."));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
+  });
+}
+
+function visibleForWorker(objectItem, uid) {
+  const status = String(objectItem?.status || "").toLowerCase();
+
+  if (status === "active") return true;
+
+  if (status === "rework") {
+    return Array.isArray(objectItem?.visibleToWorkerUids)
+      ? objectItem.visibleToWorkerUids.includes(uid)
+      : false;
+  }
+
+  return false;
+}
+
+export default function WorkerWorkdayPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [user, setUser] = useState(null);
 
   const [profile, setProfile] = useState(null);
-  const [dayDoc, setDayDoc] = useState(null);
-
-  // Объекты
   const [objects, setObjects] = useState([]);
-  const [objectId, setObjectId] = useState("");
+  const [selectedObjectId, setSelectedObjectId] = useState("");
+  const [dayDoc, setDayDoc] = useState(null);
 
   const dateKey = useMemo(() => dateKeyLocalYYYYMMDD(), []);
 
-  const dayRef = useMemo(() => {
-    if (!db || !user?.uid) return null;
-    return doc(db, "Users", user.uid, "Workdays", dateKey);
-  }, [user?.uid, dateKey]);
-
-  async function loadObjects(currentUid) {
-    if (!db || !currentUid) return;
-
-    const q = query(collection(db, "Objects"));
-    const snap = await getDocs(q);
-
-    const list = snap.docs
-      .map((d) => {
-        const data = d.data() || {};
-        return {
-          id: d.id,
-          name: String(data.name || d.id),
-          status: String(data.status || "active").toLowerCase(),
-          visibleToWorkerUids: Array.isArray(data.visibleToWorkerUids)
-            ? data.visibleToWorkerUids
-            : [],
-        };
-      })
-      .filter((obj) => {
-        // active — видят все workers
-        if (obj.status === "active") return true;
-
-        // inactive — не видит никто из workers
-        if (obj.status === "inactive") return false;
-
-        // rework — видят только выбранные сотрудники
-        if (obj.status === "rework") {
-          return obj.visibleToWorkerUids.includes(currentUid);
-        }
-
-        return false;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    setObjects(list);
-  }
+  const selectedObject = useMemo(() => {
+    return objects.find((o) => o.id === selectedObjectId) || null;
+  }, [objects, selectedObjectId]);
 
   useEffect(() => {
     if (!auth || !db) return;
 
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
       setMsg("");
       setLoading(true);
 
-      if (!u) {
+      if (!user) {
         router.replace("/login");
         return;
       }
 
-      setUser(u);
-
       try {
-        const snap = await getDoc(doc(db, "Users", u.uid));
-        if (!snap.exists()) {
+        const userSnap = await getDoc(doc(db, "Users", user.uid));
+        if (!userSnap.exists()) {
+          await signOut(auth);
           router.replace("/login");
           return;
         }
 
-        const data = snap.data() || {};
-        const role = String(data.role || "").trim().toLowerCase();
-        const status = String(data.status || "").trim().toLowerCase();
+        const userData = userSnap.data() || {};
+        const role = String(userData.role || "").trim().toLowerCase();
+        const status = String(userData.status || "").trim().toLowerCase();
 
-        if (status !== "active" || role !== "worker") {
+        if (role !== "worker" || status !== "active") {
           router.replace("/dashboard");
           return;
         }
 
-        setProfile({
-          firstName: String(data.firstName || "").trim(),
-          lastName: String(data.lastName || "").trim(),
-          email: String(data.email || u.email || "").trim(),
-          personalNumber: String(data.personalNumber || "").trim(),
+        const nextProfile = {
+          uid: user.uid,
+          email: String(userData.email || user.email || "").trim(),
+          personalNumber: String(userData.personalNumber || "").trim(),
           role,
           status,
-        });
+          firstName:
+            String(userData.firstName || "").trim() ||
+            String(userData.name || "").trim() ||
+            "",
+          lastName:
+            String(userData.lastName || "").trim() ||
+            String(userData.surname || "").trim() ||
+            "",
+        };
 
-        await loadObjects(u.uid);
+        setProfile(nextProfile);
 
-        if (dayRef) {
-          const d = await getDoc(dayRef);
-          if (d.exists()) {
-            const day = d.data() || {};
-            setDayDoc(day);
-
-            // если объект уже выбран в документе дня — подставляем
-            if (day.objectId) {
-              setObjectId(String(day.objectId));
-            }
-          } else {
-            setDayDoc(null);
-          }
-        }
+        await Promise.all([
+          loadObjects(user.uid),
+          loadDay(user.uid),
+        ]);
       } catch (e) {
-        setMsg(e?.message || "Ошибка загрузки");
+        setMsg(e?.message || "Ошибка загрузки рабочего дня");
       } finally {
         setLoading(false);
       }
     });
 
     return () => unsub();
-  }, [router, dayRef]);
+  }, [router, dateKey]);
 
-  async function refreshDay() {
-    if (!dayRef) return;
-    const s = await getDoc(dayRef);
-    setDayDoc(s.exists() ? s.data() : null);
+  async function loadObjects(uid) {
+    const q = query(collection(db, "Objects"), orderBy("name"));
+    const snap = await getDocs(q);
+
+    const list = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((item) => visibleForWorker(item, uid));
+
+    setObjects(list);
+  }
+
+  async function loadDay(uid) {
+    const snap = await getDoc(doc(db, "Users", uid, "Workdays", dateKey));
+    const data = snap.exists() ? snap.data() : null;
+    setDayDoc(data);
+
+    if (data?.objectId) {
+      setSelectedObjectId(String(data.objectId));
+    }
+  }
+
+  async function ensureInsideObjectRadius(objectItem) {
+    if (!objectItem) {
+      throw new Error("Сначала выбери объект.");
+    }
+
+    const objLat = Number(objectItem?.geo?.lat);
+    const objLng = Number(objectItem?.geo?.lng);
+    const radiusMeters = Number(objectItem?.geo?.radiusMeters || 0);
+
+    if (!Number.isFinite(objLat) || !Number.isFinite(objLng) || radiusMeters <= 0) {
+      throw new Error("У объекта не настроена геолокация или радиус.");
+    }
+
+    const pos = await getCurrentPositionAsync();
+
+    const workerLat = Number(pos.coords.latitude);
+    const workerLng = Number(pos.coords.longitude);
+    const accuracy = Number(pos.coords.accuracy || 0);
+
+    const dist = distanceMeters(workerLat, workerLng, objLat, objLng);
+
+    if (dist > radiusMeters) {
+      throw new Error(
+        `Ты находишься вне зоны объекта. До границы примерно ${Math.round(
+          dist - radiusMeters
+        )} м.`
+      );
+    }
+
+    return {
+      lat: workerLat,
+      lng: workerLng,
+      accuracy,
+      distanceToObjectMeters: Math.round(dist),
+      checkedAt: new Date(),
+      objectLat: objLat,
+      objectLng: objLng,
+      objectRadiusMeters: radiusMeters,
+    };
   }
 
   const started = !!dayDoc?.startAt;
-  const breakStarted = !!dayDoc?.breakStartAt;
-  const breakEnded = !!dayDoc?.breakEndAt;
+  const onBreak = !!dayDoc?.breakStartAt && !dayDoc?.breakEndAt;
   const ended = !!dayDoc?.endAt;
 
   const canStartDay = !started && !ended;
-  const canStartBreak = started && !ended && !breakStarted;
-  const canEndBreak = started && !ended && breakStarted && !breakEnded;
+  const canStartBreak = started && !ended && !onBreak;
+  const canEndBreak = started && !ended && onBreak;
   const canEndDay = started && !ended;
 
-  function getSelectedObjectName() {
-    const found = objects.find((o) => o.id === objectId);
-    return found ? found.name : "";
-  }
-
-  async function ensureObjectChosen() {
-    if (!objectId) {
-      setMsg("Выбери объект перед началом рабочего дня.");
-      return false;
+  async function handleStartDay() {
+    if (!profile?.uid || !selectedObject) {
+      setMsg("Сначала выбери объект.");
+      return;
     }
-    return true;
-  }
 
-  async function startDay() {
     setMsg("");
-    if (!dayRef) return;
-
-    if (!(await ensureObjectChosen())) return;
+    setBusy(true);
 
     try {
-      const s = await getDoc(dayRef);
-      const objectName = getSelectedObjectName();
+      const geoCheck = await ensureInsideObjectRadius(selectedObject);
 
-      if (s.exists()) {
-        const d = s.data() || {};
-        if (d.startAt) {
-          setMsg("Рабочий день уже начат.");
-          return;
-        }
-
-        await updateDoc(dayRef, {
+      await setDoc(
+        doc(db, "Users", profile.uid, "Workdays", dateKey),
+        {
           dateKey,
-          objectId,
-          objectName,
-          startAt: serverTimestamp(),
-          status: "started",
-          updatedAt: serverTimestamp(),
-        });
-      } else {
-        await setDoc(dayRef, {
-          dateKey,
-          objectId,
-          objectName,
+          objectId: selectedObject.id,
+          objectName: String(selectedObject.name || selectedObject.id),
+          objectGeo: {
+            lat: Number(selectedObject.geo?.lat || 0),
+            lng: Number(selectedObject.geo?.lng || 0),
+            radiusMeters: Number(selectedObject.geo?.radiusMeters || 0),
+          },
           startAt: serverTimestamp(),
           breakStartAt: null,
           breakEndAt: null,
           endAt: null,
+          startGeo: geoCheck,
           status: "started",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
-      }
+        },
+        { merge: true }
+      );
 
-      await refreshDay();
+      await loadDay(profile.uid);
+      setMsg("Рабочий день начат.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка: не удалось начать день");
+      setMsg(e?.message || "Не удалось начать рабочий день.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function startBreak() {
+  async function handleStartBreak() {
+    if (!profile?.uid) return;
+
     setMsg("");
-    if (!dayRef) return;
+    setBusy(true);
 
     try {
-      const s = await getDoc(dayRef);
-      if (!s.exists()) {
-        setMsg("Сначала начни рабочий день.");
-        return;
-      }
-
-      const d = s.data() || {};
-      if (!d.startAt) {
-        setMsg("Сначала начни рабочий день.");
-        return;
-      }
-      if (d.endAt) {
-        setMsg("День уже завершён.");
-        return;
-      }
-      if (d.breakStartAt) {
-        setMsg("Перерыв уже начат.");
-        return;
-      }
-
-      await updateDoc(dayRef, {
+      await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
         breakStartAt: serverTimestamp(),
         status: "break",
         updatedAt: serverTimestamp(),
       });
-      await refreshDay();
+
+      await loadDay(profile.uid);
+      setMsg("Перерыв начат.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка: не удалось начать перерыв");
+      setMsg(e?.message || "Не удалось начать перерыв.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function endBreak() {
+  async function handleEndBreak() {
+    if (!profile?.uid) return;
+
     setMsg("");
-    if (!dayRef) return;
+    setBusy(true);
 
     try {
-      const s = await getDoc(dayRef);
-      if (!s.exists()) {
-        setMsg("Нет активного рабочего дня.");
-        return;
-      }
-
-      const d = s.data() || {};
-      if (!d.breakStartAt) {
-        setMsg("Перерыв ещё не начат.");
-        return;
-      }
-      if (d.breakEndAt) {
-        setMsg("Перерыв уже завершён.");
-        return;
-      }
-      if (d.endAt) {
-        setMsg("День уже завершён.");
-        return;
-      }
-
-      await updateDoc(dayRef, {
+      await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
         breakEndAt: serverTimestamp(),
         status: "started",
         updatedAt: serverTimestamp(),
       });
-      await refreshDay();
+
+      await loadDay(profile.uid);
+      setMsg("Перерыв завершён.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка: не удалось завершить перерыв");
+      setMsg(e?.message || "Не удалось завершить перерыв.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function endDay() {
+  async function handleEndDay() {
+    if (!profile?.uid) return;
+
     setMsg("");
-    if (!dayRef) return;
+    setBusy(true);
 
     try {
-      const s = await getDoc(dayRef);
-      if (!s.exists()) {
-        setMsg("Сначала начни рабочий день.");
-        return;
+      const currentSnap = await getDoc(doc(db, "Users", profile.uid, "Workdays", dateKey));
+      if (!currentSnap.exists()) {
+        throw new Error("Сначала начни рабочий день.");
       }
 
-      const d = s.data() || {};
-      if (!d.startAt) {
-        setMsg("Сначала начни рабочий день.");
-        return;
-      }
-      if (d.endAt) {
-        setMsg("День уже завершён.");
-        return;
-      }
+      const currentDay = currentSnap.data() || {};
+      const objectId = String(currentDay.objectId || selectedObjectId || "");
+      const objectItem = objects.find((o) => o.id === objectId);
 
-      if (d.breakStartAt && !d.breakEndAt) {
-        setMsg("Сначала заверши перерыв, потом заканчивай день.");
-        return;
-      }
+      const geoCheck = await ensureInsideObjectRadius(objectItem);
 
-      await updateDoc(dayRef, {
+      await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
         endAt: serverTimestamp(),
+        endGeo: geoCheck,
         status: "ended",
         updatedAt: serverTimestamp(),
       });
-      await refreshDay();
+
+      await loadDay(profile.uid);
+      setMsg("Рабочий день завершён.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка: не удалось завершить день");
+      setMsg(e?.message || "Не удалось завершить рабочий день.");
+    } finally {
+      setBusy(false);
     }
   }
 
   if (loading) {
     return (
       <main className={styles.page}>
-        <div className={styles.card}>Загрузка...</div>
+        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
       </main>
     );
   }
 
   return (
     <main className={styles.page}>
-      <div className={styles.card}>
+      <div className={`${styles.card} ${typo.base}`}>
         <div className={styles.header}>
-          <h1 className={styles.title}>Отметка рабочего дня</h1>
-          <p className={styles.subtitle}>Дата: {dateKey}</p>
-        </div>
-
-        {/* Выбор объекта */}
-        <div className={styles.infoBox} style={{ marginTop: 12 }}>
-          <div className={styles.infoGrid}>
-            <div className={styles.label}>Объект</div>
-            <div className={styles.value}>
-              <select
-                value={objectId}
-                onChange={(e) => setObjectId(e.target.value)}
-                disabled={started}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(15, 23, 42, 0.18)",
-                  background: "#fff",
-                }}
-              >
-                <option value="">
-                  {objects.length ? "Выбери объект..." : "Нет доступных объектов"}
-                </option>
-
-                {objects.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-
-              {started ? (
-                <div style={{ marginTop: 8, opacity: 0.7, fontSize: 13 }}>
-                  Объект зафиксирован на день:{" "}
-                  <b>{dayDoc?.objectName || getSelectedObjectName()}</b>
-                </div>
-              ) : null}
+          <div>
+            <div className={`${styles.title} ${typo.title}`}>
+              Отметка рабочего дня
             </div>
+            <div className={styles.subtitle}>Solar E-Tron</div>
           </div>
         </div>
 
         <div className={styles.infoBox}>
-          <div className={styles.infoGrid}>
-            <div className={styles.label}>Имя</div>
-            <div className={styles.value}>{profile?.firstName || "-"}</div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Дата:</span>
+            <span className={styles.value}>{dateKey}</span>
+          </div>
 
-            <div className={styles.label}>Фамилия</div>
-            <div className={styles.value}>{profile?.lastName || "-"}</div>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Объект:</span>
+            <span className={styles.value}>
+              <select
+                value={selectedObjectId}
+                onChange={(e) => setSelectedObjectId(e.target.value)}
+                disabled={started}
+                style={inputStyle}
+              >
+                <option value="">Выбери объект...</option>
+                {objects.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name || item.id}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </div>
 
-            <div className={styles.label}>E-mail</div>
-            <div className={styles.value}>{profile?.email || "-"}</div>
+          {selectedObject ? (
+            <>
+              <div className={styles.infoRow}>
+                <span className={styles.label}>Координаты объекта:</span>
+                <span className={styles.value}>
+                  {Number(selectedObject?.geo?.lat || 0).toFixed(6)},{" "}
+                  {Number(selectedObject?.geo?.lng || 0).toFixed(6)}
+                </span>
+              </div>
 
-            <div className={styles.label}>Личный номер</div>
-            <div className={styles.value}>{profile?.personalNumber || "-"}</div>
+              <div className={styles.infoRow}>
+                <span className={styles.label}>Маршрут:</span>
+                <span className={styles.value}>
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      `${selectedObject?.geo?.lat},${selectedObject?.geo?.lng}`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={styles.link}
+                  >
+                    Открыть в Google Maps
+                  </a>
+                </span>
+              </div>
+            </>
+          ) : null}
 
-            <div className={styles.label}>Статус дня</div>
-            <div className={styles.value}>
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Статус дня:</span>
+            <span className={styles.value}>
               {ended
                 ? "Завершён"
-                : breakStarted && !breakEnded
+                : onBreak
                 ? "Перерыв"
                 : started
                 ? "Идёт"
                 : "Не начат"}
-            </div>
+            </span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Начало:</span>
+            <span className={styles.value}>{timeLabel(dayDoc?.startAt)}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Начало перерыва:</span>
+            <span className={styles.value}>{timeLabel(dayDoc?.breakStartAt)}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Конец перерыва:</span>
+            <span className={styles.value}>{timeLabel(dayDoc?.breakEndAt)}</span>
+          </div>
+
+          <div className={styles.infoRow}>
+            <span className={styles.label}>Конец дня:</span>
+            <span className={styles.value}>{timeLabel(dayDoc?.endAt)}</span>
           </div>
         </div>
 
-        <div className={styles.divider} />
-
         <div className={styles.actionsGrid}>
           <button
+            type="button"
             className={styles.actionButton}
-            onClick={startDay}
-            disabled={!canStartDay}
-            style={{ opacity: canStartDay ? 1 : 0.5 }}
+            onClick={handleStartDay}
+            disabled={!canStartDay || busy}
+            style={{ opacity: canStartDay && !busy ? 1 : 0.5 }}
           >
-            Начать день
+            Начать рабочий день
           </button>
 
           <button
+            type="button"
             className={styles.actionButton}
-            onClick={startBreak}
-            disabled={!canStartBreak}
-            style={{ opacity: canStartBreak ? 1 : 0.5 }}
+            onClick={handleStartBreak}
+            disabled={!canStartBreak || busy}
+            style={{ opacity: canStartBreak && !busy ? 1 : 0.5 }}
           >
             Начать перерыв
           </button>
 
           <button
+            type="button"
             className={styles.actionButton}
-            onClick={endBreak}
-            disabled={!canEndBreak}
-            style={{ opacity: canEndBreak ? 1 : 0.5 }}
+            onClick={handleEndBreak}
+            disabled={!canEndBreak || busy}
+            style={{ opacity: canEndBreak && !busy ? 1 : 0.5 }}
           >
-            Завершить перерыв
+            Закончить перерыв
           </button>
 
           <button
+            type="button"
             className={styles.actionButton}
-            onClick={endDay}
-            disabled={!canEndDay}
-            style={{ opacity: canEndDay ? 1 : 0.5 }}
+            onClick={handleEndDay}
+            disabled={!canEndDay || busy}
+            style={{ opacity: canEndDay && !busy ? 1 : 0.5 }}
           >
-            Завершить день
+            Завершить рабочий день
           </button>
         </div>
 
@@ -465,3 +541,12 @@ export default function WorkdayPage() {
     </main>
   );
 }
+
+const inputStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(15, 23, 42, 0.18)",
+  background: "#fff",
+  outline: "none",
+};
