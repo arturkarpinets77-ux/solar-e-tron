@@ -99,6 +99,33 @@ function calcNetMinutes(d) {
   };
 }
 
+function downloadTextFile(filename, content, mimeType = "text/plain;charset=utf-8;") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const str = String(value ?? "");
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+function htmlEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export default function AccountantPage() {
   const router = useRouter();
 
@@ -313,6 +340,245 @@ export default function AccountantPage() {
     }, 0);
   }, [rows, summaryRows, selectedWorkerId]);
 
+  function exportCsv() {
+    try {
+      if (selectedWorkerId === ALL_VALUE) {
+        const header = [
+          "Имя",
+          "Личный номер",
+          "Роль",
+          "Отработано дней",
+          "Отработано часов",
+        ];
+
+        const lines = [
+          header.map(csvEscape).join(","),
+          ...summaryRows.map((r) =>
+            [
+              r.name,
+              r.personalNumber,
+              r.role,
+              r.workedDays,
+              fmtHM(r.totalMinutes),
+            ]
+              .map(csvEscape)
+              .join(",")
+          ),
+        ];
+
+        downloadTextFile(
+          `accountant_all_${monthValue}.csv`,
+          "\uFEFF" + lines.join("\n"),
+          "text/csv;charset=utf-8;"
+        );
+        return;
+      }
+
+      const workerName = selectedPerson ? fullName(selectedPerson) : "Работник";
+      const header = [
+        "Дата",
+        "Статус",
+        "Объект",
+        "Начало",
+        "Перерыв начало",
+        "Перерыв конец",
+        "Конец",
+        "Итого",
+      ];
+
+      const lines = [
+        [workerName, selectedPerson?.personalNumber || "-", selectedPerson?.role || "-", monthValue]
+          .map(csvEscape)
+          .join(","),
+        header.map(csvEscape).join(","),
+        ...rows.map((d) => {
+          const calc = calcNetMinutes(d);
+          return [
+            d.dateKey || d.id,
+            statusLabel(d),
+            d.objectName || "-",
+            toTime(d.startAt),
+            toTime(d.breakStartAt),
+            toTime(d.breakEndAt),
+            toTime(d.endAt),
+            d.endAt ? fmtHM(calc.net) : "-",
+          ]
+            .map(csvEscape)
+            .join(",");
+        }),
+        [
+          csvEscape("Итого за месяц"),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(fmtHM(totalMinutes)),
+        ].join(","),
+      ];
+
+      downloadTextFile(
+        `accountant_${selectedWorkerId}_${monthValue}.csv`,
+        "\uFEFF" + lines.join("\n"),
+        "text/csv;charset=utf-8;"
+      );
+    } catch (e) {
+      setMsg(e?.message || "Ошибка экспорта CSV");
+    }
+  }
+
+  function exportPdf() {
+    try {
+      const printWindow = window.open("", "_blank", "width=1000,height=800");
+      if (!printWindow) {
+        setMsg("Браузер заблокировал окно печати.");
+        return;
+      }
+
+      let title = "";
+      let bodyHtml = "";
+
+      if (selectedWorkerId === ALL_VALUE) {
+        title = `Сводка по всем сотрудникам за ${monthValue}`;
+        bodyHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th>Имя</th>
+                <th>Личный номер</th>
+                <th>Роль</th>
+                <th>Отработано дней</th>
+                <th>Отработано часов</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${summaryRows
+                .map(
+                  (r) => `
+                    <tr>
+                      <td>${htmlEscape(r.name)}</td>
+                      <td>${htmlEscape(r.personalNumber)}</td>
+                      <td>${htmlEscape(r.role)}</td>
+                      <td>${htmlEscape(r.workedDays)}</td>
+                      <td>${htmlEscape(fmtHM(r.totalMinutes))}</td>
+                    </tr>
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        `;
+      } else {
+        const workerName = selectedPerson ? fullName(selectedPerson) : "Работник";
+        title = `Отчёт по сотруднику: ${workerName} (${monthValue})`;
+
+        bodyHtml = `
+          <div class="meta">
+            <div><b>Сотрудник:</b> ${htmlEscape(workerName)}</div>
+            <div><b>Личный номер:</b> ${htmlEscape(selectedPerson?.personalNumber || "-")}</div>
+            <div><b>Роль:</b> ${htmlEscape(selectedPerson?.role || "-")}</div>
+            <div><b>Месяц:</b> ${htmlEscape(monthValue)}</div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Статус</th>
+                <th>Объект</th>
+                <th>Начало</th>
+                <th>Перерыв</th>
+                <th>Конец</th>
+                <th>Итого</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map((d) => {
+                  const calc = calcNetMinutes(d);
+                  return `
+                    <tr>
+                      <td>${htmlEscape(d.dateKey || d.id)}</td>
+                      <td>${htmlEscape(statusLabel(d))}</td>
+                      <td>${htmlEscape(d.objectName || "-")}</td>
+                      <td>${htmlEscape(toTime(d.startAt))}</td>
+                      <td>${htmlEscape(`${toTime(d.breakStartAt)} – ${toTime(d.breakEndAt)}`)}</td>
+                      <td>${htmlEscape(toTime(d.endAt))}</td>
+                      <td>${htmlEscape(d.endAt ? fmtHM(calc.net) : "-")}</td>
+                    </tr>
+                  `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+
+          <div class="total">
+            <b>Итого за месяц:</b> ${htmlEscape(fmtHM(totalMinutes))}
+          </div>
+        `;
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(`
+        <!doctype html>
+        <html lang="ru">
+          <head>
+            <meta charset="utf-8" />
+            <title>${htmlEscape(title)}</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                padding: 24px;
+                color: #111827;
+              }
+              h1 {
+                font-size: 22px;
+                margin-bottom: 16px;
+              }
+              .meta {
+                margin-bottom: 16px;
+                display: grid;
+                gap: 6px;
+              }
+              .total {
+                margin-top: 18px;
+                font-size: 18px;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 12px;
+              }
+              th, td {
+                border: 1px solid #d1d5db;
+                padding: 8px 10px;
+                text-align: left;
+                vertical-align: top;
+                font-size: 14px;
+              }
+              th {
+                background: #f3f4f6;
+              }
+            </style>
+          </head>
+          <body>
+            <h1>${htmlEscape(title)}</h1>
+            ${bodyHtml}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+
+      setTimeout(() => {
+        printWindow.print();
+      }, 300);
+    } catch (e) {
+      setMsg(e?.message || "Ошибка экспорта PDF");
+    }
+  }
+
   if (loading) {
     return (
       <main className={styles.page}>
@@ -345,15 +611,13 @@ export default function AccountantPage() {
                 style={inputStyle}
               >
                 <option value={ALL_VALUE}>Все</option>
-                {people.map((w) => {
-                  return (
-                    <option key={w.id} value={w.id}>
-                      {fullName(w)}
-                      {w.personalNumber ? ` — ${w.personalNumber}` : ""}
-                      {w.role ? ` — ${String(w.role).toLowerCase()}` : ""}
-                    </option>
-                  );
-                })}
+                {people.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {fullName(w)}
+                    {w.personalNumber ? ` — ${w.personalNumber}` : ""}
+                    {w.role ? ` — ${String(w.role).toLowerCase()}` : ""}
+                  </option>
+                ))}
               </select>
             </span>
           </div>
@@ -371,38 +635,85 @@ export default function AccountantPage() {
           </div>
 
           {selectedWorkerId === ALL_VALUE ? (
-  <div style={{ marginTop: 10, opacity: 0.8 }}>
-    <b>Режим:</b> сводка по всем работникам и директору
-  </div>
-) : selectedPerson ? (
-  <div
-    style={{
-      marginTop: 10,
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      flexWrap: "wrap",
-    }}
-  >
-    <div style={{ opacity: 0.8 }}>
-      <b>Выбран:</b> {fullName(selectedPerson)}
-      {selectedPerson.personalNumber
-        ? ` — ${selectedPerson.personalNumber}`
-        : ""}
-      {selectedPerson.role
-        ? ` — ${String(selectedPerson.role).toLowerCase()}`
-        : ""}
-    </div>
+            <div style={{ marginTop: 10, opacity: 0.8 }}>
+              <b>Режим:</b> сводка по всем работникам и директору
+            </div>
+          ) : selectedPerson ? (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ opacity: 0.8 }}>
+                <b>Выбран:</b> {fullName(selectedPerson)}
+                {selectedPerson.personalNumber
+                  ? ` — ${selectedPerson.personalNumber}`
+                  : ""}
+                {selectedPerson.role
+                  ? ` — ${String(selectedPerson.role).toLowerCase()}`
+                  : ""}
+              </div>
 
-    <button
-      type="button"
-      className={styles.btnSecondary}
-      onClick={() => setSelectedWorkerId(ALL_VALUE)}
-    >
-      Вернуться ко всем
-    </button>
-  </div>
-) : null}
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                onClick={() => setSelectedWorkerId(ALL_VALUE)}
+              >
+                Вернуться ко всем
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={exportCsv}
+            disabled={
+              rowsLoading ||
+              (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
+            }
+            style={{
+              opacity:
+                rowsLoading ||
+                (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
+                  ? 0.6
+                  : 1,
+            }}
+          >
+            Экспорт CSV
+          </button>
+
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={exportPdf}
+            disabled={
+              rowsLoading ||
+              (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
+            }
+            style={{
+              opacity:
+                rowsLoading ||
+                (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
+                  ? 0.6
+                  : 1,
+            }}
+          >
+            Экспорт PDF
+          </button>
         </div>
 
         {msg ? <div className={styles.msg}>{msg}</div> : null}
@@ -421,32 +732,32 @@ export default function AccountantPage() {
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {summaryRows.map((r) => (
-  <button
-    key={r.id}
-    type="button"
-    onClick={() => setSelectedWorkerId(r.id)}
-    style={{
-      borderRadius: 14,
-      border: "1px solid rgba(15,23,42,0.12)",
-      background: "rgba(255,255,255,0.85)",
-      padding: 14,
-      display: "grid",
-      gap: 8,
-      width: "100%",
-      textAlign: "left",
-      cursor: "pointer",
-    }}
-  >
-    <div style={{ fontWeight: 800 }}>{r.name}</div>
-    <div><b>Личный номер:</b> {r.personalNumber}</div>
-    <div><b>Роль:</b> {r.role}</div>
-    <div><b>Отработано дней:</b> {r.workedDays}</div>
-    <div><b>Отработано часов:</b> {fmtHM(r.totalMinutes)}</div>
-    <div style={{ fontWeight: 700, color: "#1e40af", marginTop: 4 }}>
-      Подробно
-    </div>
-  </button>
-))}
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setSelectedWorkerId(r.id)}
+                  style={{
+                    borderRadius: 14,
+                    border: "1px solid rgba(15,23,42,0.12)",
+                    background: "rgba(255,255,255,0.85)",
+                    padding: 14,
+                    display: "grid",
+                    gap: 8,
+                    width: "100%",
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 800 }}>{r.name}</div>
+                  <div><b>Личный номер:</b> {r.personalNumber}</div>
+                  <div><b>Роль:</b> {r.role}</div>
+                  <div><b>Отработано дней:</b> {r.workedDays}</div>
+                  <div><b>Отработано часов:</b> {fmtHM(r.totalMinutes)}</div>
+                  <div style={{ fontWeight: 700, color: "#1e40af", marginTop: 4 }}>
+                    Подробно
+                  </div>
+                </button>
+              ))}
             </div>
           )
         ) : rows.length === 0 ? (
@@ -492,14 +803,13 @@ export default function AccountantPage() {
         )}
 
         {selectedWorkerId !== ALL_VALUE ? (
-  <>
-    <div className={styles.divider} />
-
-    <div style={{ fontWeight: 800, fontSize: 18 }}>
-      Итого за месяц: {fmtHM(totalMinutes)}
-    </div>
-  </>
-) : null}
+          <>
+            <div className={styles.divider} />
+            <div style={{ fontWeight: 800, fontSize: 18 }}>
+              Итого за месяц: {fmtHM(totalMinutes)}
+            </div>
+          </>
+        ) : null}
 
         <div className={styles.footer}>
           <Link className={styles.link} href="/">
