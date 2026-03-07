@@ -371,20 +371,38 @@ export default function AccountantPage() {
           </div>
 
           {selectedWorkerId === ALL_VALUE ? (
-            <div style={{ marginTop: 10, opacity: 0.8 }}>
-              <b>Режим:</b> сводка по всем работникам и директору
-            </div>
-          ) : selectedPerson ? (
-            <div style={{ marginTop: 10, opacity: 0.8 }}>
-              <b>Выбран:</b> {fullName(selectedPerson)}
-              {selectedPerson.personalNumber
-                ? ` — ${selectedPerson.personalNumber}`
-                : ""}
-              {selectedPerson.role
-                ? ` — ${String(selectedPerson.role).toLowerCase()}`
-                : ""}
-            </div>
-          ) : null}
+  <div style={{ marginTop: 10, opacity: 0.8 }}>
+    <b>Режим:</b> сводка по всем работникам и директору
+  </div>
+) : selectedPerson ? (
+  <div
+    style={{
+      marginTop: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      flexWrap: "wrap",
+    }}
+  >
+    <div style={{ opacity: 0.8 }}>
+      <b>Выбран:</b> {fullName(selectedPerson)}
+      {selectedPerson.personalNumber
+        ? ` — ${selectedPerson.personalNumber}`
+        : ""}
+      {selectedPerson.role
+        ? ` — ${String(selectedPerson.role).toLowerCase()}`
+        : ""}
+    </div>
+
+    <button
+      type="button"
+      className={styles.btnSecondary}
+      onClick={() => setSelectedWorkerId(ALL_VALUE)}
+    >
+      Вернуться ко всем
+    </button>
+  </div>
+) : null}
         </div>
 
         {msg ? <div className={styles.msg}>{msg}</div> : null}
