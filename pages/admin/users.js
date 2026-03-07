@@ -1,5 +1,5 @@
 // pages/admin/users.js
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -18,13 +18,30 @@ import {
 import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
 
+const ROLE_OPTIONS = [
+  { value: "worker", label: "worker" },
+  { value: "accountant", label: "accountant" },
+  { value: "director", label: "director" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "active", label: "active" },
+  { value: "pending", label: "pending" },
+  { value: "inactive", label: "inactive" },
+];
+
 export default function AdminUsersPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
   const [msg, setMsg] = useState("");
-  const [users, setUsers] = useState([]);
+
+  const [me, setMe] = useState(null);
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [activeUsers, setActiveUsers] = useState([]);
+
+  const [editMap, setEditMap] = useState({});
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -46,9 +63,9 @@ export default function AdminUsersPage() {
           return;
         }
 
-        const me = meSnap.data() || {};
-        const role = String(me.role || "").trim().toLowerCase();
-        const status = String(me.status || "").trim().toLowerCase();
+        const meData = meSnap.data() || {};
+        const role = String(meData.role || "").trim().toLowerCase();
+        const status = String(meData.status || "").trim().toLowerCase();
 
         if (status !== "active") {
           router.replace("/dashboard");
@@ -60,7 +77,13 @@ export default function AdminUsersPage() {
           return;
         }
 
-        await loadPendingUsers();
+        setMe({
+          uid: user.uid,
+          role,
+          status,
+        });
+
+        await loadUsers(user.uid);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки пользователей");
       } finally {
@@ -71,24 +94,61 @@ export default function AdminUsersPage() {
     return () => unsub();
   }, [router]);
 
-  async function loadPendingUsers() {
+  async function loadUsers(currentUid) {
     if (!db) return;
 
-    const q = query(collection(db, "Users"), where("status", "==", "pending"));
-    const snap = await getDocs(q);
+    const pendingQ = query(collection(db, "Users"), where("status", "==", "pending"));
+    const pendingSnap = await getDocs(pendingQ);
 
-    const list = snap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
+    const pendingList = pendingSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const aName = fullName(a);
+        const bName = fullName(b);
+        return aName.localeCompare(bName);
+      });
 
-    list.sort((a, b) => {
-      const aName = `${a.firstName || ""} ${a.lastName || ""}`.trim();
-      const bName = `${b.firstName || ""} ${b.lastName || ""}`.trim();
-      return aName.localeCompare(bName);
+    const allSnap = await getDocs(collection(db, "Users"));
+    const activeList = allSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((u) => String(u.status || "").toLowerCase() !== "pending")
+      .filter((u) => u.id !== currentUid) // себя не даём менять
+      .sort((a, b) => {
+        const aName = fullName(a);
+        const bName = fullName(b);
+        return aName.localeCompare(bName);
+      });
+
+    setPendingUsers(pendingList);
+    setActiveUsers(activeList);
+
+    const nextEditMap = {};
+    activeList.forEach((u) => {
+      nextEditMap[u.id] = {
+        role: String(u.role || "worker").toLowerCase(),
+        status: String(u.status || "active").toLowerCase(),
+      };
     });
+    setEditMap(nextEditMap);
+  }
 
-    setUsers(list);
+  function fullName(u) {
+    return (
+      `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+      `${u.name || ""} ${u.surname || ""}`.trim() ||
+      u.email ||
+      "-"
+    );
+  }
+
+  function handleEditChange(uid, field, value) {
+    setEditMap((prev) => ({
+      ...prev,
+      [uid]: {
+        ...prev[uid],
+        [field]: value,
+      },
+    }));
   }
 
   async function approveUser(uid) {
@@ -101,13 +161,38 @@ export default function AdminUsersPage() {
       });
 
       setMsg("Пользователь подтверждён.");
-      await loadPendingUsers();
+      await loadUsers(me?.uid);
     } catch (e) {
       setMsg(e?.message || "Ошибка подтверждения пользователя");
     } finally {
       setSavingId("");
     }
   }
+
+  async function saveUser(uid) {
+    setMsg("");
+    setSavingId(uid);
+
+    try {
+      const draft = editMap[uid];
+      if (!draft) throw new Error("Нет данных для сохранения.");
+
+      await updateDoc(doc(db, "Users", uid), {
+        role: String(draft.role || "worker").toLowerCase(),
+        status: String(draft.status || "active").toLowerCase(),
+      });
+
+      setMsg("Изменения сохранены.");
+      await loadUsers(me?.uid);
+    } catch (e) {
+      setMsg(e?.message || "Ошибка сохранения пользователя");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  const hasPending = useMemo(() => pendingUsers.length > 0, [pendingUsers.length]);
+  const hasActive = useMemo(() => activeUsers.length > 0, [activeUsers.length]);
 
   if (loading) {
     return (
@@ -123,19 +208,19 @@ export default function AdminUsersPage() {
         <div className={styles.header}>
           <div>
             <div className={`${styles.title} ${typo.title}`}>
-              Подтверждение пользователей
+              Управление пользователями
             </div>
             <div className={styles.subtitle}>
-              Директор / администратор подтверждает новых работников
+              Подтверждение новых работников и изменение ролей
             </div>
           </div>
         </div>
 
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button
             type="button"
             className={styles.btnSecondary}
-            onClick={loadPendingUsers}
+            onClick={() => loadUsers(me?.uid)}
           >
             Обновить список
           </button>
@@ -145,7 +230,11 @@ export default function AdminUsersPage() {
 
         <div className={styles.divider} />
 
-        {users.length === 0 ? (
+        <div style={{ fontWeight: 800, marginBottom: 10, fontSize: 22 }}>
+          Новые пользователи (pending)
+        </div>
+
+        {!hasPending ? (
           <div
             style={{
               padding: 16,
@@ -158,56 +247,118 @@ export default function AdminUsersPage() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
-            {users.map((u) => {
-              const fullName =
-                `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
-                `${u.name || ""} ${u.surname || ""}`.trim() ||
-                "-";
+            {pendingUsers.map((u) => (
+              <div
+                key={u.id}
+                style={cardStyle}
+              >
+                <div style={{ fontWeight: 800, fontSize: 18 }}>
+                  {fullName(u)}
+                </div>
+
+                <div><b>E-mail:</b> {u.email || "-"}</div>
+                <div><b>Личный номер:</b> {u.personalNumber || "-"}</div>
+                <div><b>Роль:</b> {u.role || "-"}</div>
+                <div><b>Статус:</b> {u.status || "-"}</div>
+
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={() => approveUser(u.id)}
+                    disabled={savingId === u.id}
+                    style={{
+                      maxWidth: 260,
+                      opacity: savingId === u.id ? 0.6 : 1,
+                    }}
+                  >
+                    {savingId === u.id ? "Подтверждение..." : "Подтвердить"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className={styles.divider} />
+
+        <div style={{ fontWeight: 800, marginBottom: 10, fontSize: 22 }}>
+          Активные / неактивные пользователи
+        </div>
+
+        {!hasActive ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 14,
+              border: "1px solid rgba(120, 90, 20, 0.16)",
+              background: "rgba(255, 252, 240, 0.82)",
+            }}
+          >
+            Нет пользователей для отображения.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {activeUsers.map((u) => {
+              const draft = editMap[u.id] || {
+                role: String(u.role || "worker").toLowerCase(),
+                status: String(u.status || "active").toLowerCase(),
+              };
 
               return (
                 <div
                   key={u.id}
-                  style={{
-                    padding: 16,
-                    borderRadius: 14,
-                    border: "1px solid rgba(120, 90, 20, 0.16)",
-                    background: "rgba(255, 252, 240, 0.82)",
-                    display: "grid",
-                    gap: 8,
-                  }}
+                  style={cardStyle}
                 >
                   <div style={{ fontWeight: 800, fontSize: 18 }}>
-                    {fullName}
+                    {fullName(u)}
                   </div>
 
-                  <div>
-                    <b>E-mail:</b> {u.email || "-"}
+                  <div><b>E-mail:</b> {u.email || "-"}</div>
+                  <div><b>Личный номер:</b> {u.personalNumber || "-"}</div>
+
+                  <div style={rowStyle}>
+                    <span style={labelStyle}>Роль:</span>
+                    <select
+                      value={draft.role}
+                      onChange={(e) => handleEditChange(u.id, "role", e.target.value)}
+                      style={inputStyle}
+                    >
+                      {ROLE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  <div>
-                    <b>Личный номер:</b> {u.personalNumber || "-"}
-                  </div>
-
-                  <div>
-                    <b>Роль:</b> {u.role || "-"}
-                  </div>
-
-                  <div>
-                    <b>Статус:</b> {u.status || "-"}
+                  <div style={rowStyle}>
+                    <span style={labelStyle}>Статус:</span>
+                    <select
+                      value={draft.status}
+                      onChange={(e) => handleEditChange(u.id, "status", e.target.value)}
+                      style={inputStyle}
+                    >
+                      {STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div style={{ marginTop: 6 }}>
                     <button
                       type="button"
                       className={styles.actionButton}
-                      onClick={() => approveUser(u.id)}
+                      onClick={() => saveUser(u.id)}
                       disabled={savingId === u.id}
                       style={{
                         maxWidth: 260,
                         opacity: savingId === u.id ? 0.6 : 1,
                       }}
                     >
-                      {savingId === u.id ? "Подтверждение..." : "Подтвердить"}
+                      {savingId === u.id ? "Сохранение..." : "Сохранить"}
                     </button>
                   </div>
                 </div>
@@ -225,3 +376,33 @@ export default function AdminUsersPage() {
     </main>
   );
 }
+
+const cardStyle = {
+  padding: 16,
+  borderRadius: 14,
+  border: "1px solid rgba(120, 90, 20, 0.16)",
+  background: "rgba(255, 252, 240, 0.82)",
+  display: "grid",
+  gap: 8,
+};
+
+const rowStyle = {
+  display: "grid",
+  gridTemplateColumns: "120px 1fr",
+  gap: 10,
+  alignItems: "center",
+  marginTop: 4,
+};
+
+const labelStyle = {
+  fontWeight: 700,
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(120, 90, 20, 0.16)",
+  background: "rgba(255,255,255,0.92)",
+  outline: "none",
+};
