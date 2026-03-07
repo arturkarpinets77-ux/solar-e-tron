@@ -465,11 +465,15 @@ export default function AccountantPage() {
           </div>
         )}
 
-        <div className={styles.divider} />
+        {selectedWorkerId !== ALL_VALUE ? (
+  <>
+    <div className={styles.divider} />
 
-        <div style={{ fontWeight: 800, fontSize: 18 }}>
-          Итого за месяц: {fmtHM(totalMinutes)}
-        </div>
+    <div style={{ fontWeight: 800, fontSize: 18 }}>
+      Итого за месяц: {fmtHM(totalMinutes)}
+    </div>
+  </>
+) : null}
 
         <div className={styles.footer}>
           <Link className={styles.link} href="/">
