@@ -11,7 +11,6 @@ import {
   getDoc,
   getDocs,
   query,
-  where,
   setDoc,
   updateDoc,
   serverTimestamp,
@@ -38,7 +37,7 @@ export default function WorkdayPage() {
   const [dayDoc, setDayDoc] = useState(null);
 
   // Объекты
-  const [objects, setObjects] = useState([]); // [{id,name}]
+  const [objects, setObjects] = useState([]);
   const [objectId, setObjectId] = useState("");
 
   const dateKey = useMemo(() => dateKeyLocalYYYYMMDD(), []);
@@ -48,17 +47,40 @@ export default function WorkdayPage() {
     return doc(db, "Users", user.uid, "Workdays", dateKey);
   }, [user?.uid, dateKey]);
 
-  async function loadObjects() {
-    if (!db) return;
-    // если используешь active — оставь where("active","==",true), иначе убери query/where
-    const q = query(collection(db, "Objects"), where("active", "==", true));
+  async function loadObjects(currentUid) {
+    if (!db || !currentUid) return;
+
+    const q = query(collection(db, "Objects"));
     const snap = await getDocs(q);
+
     const list = snap.docs
-      .map((d) => ({
-        id: d.id,
-        name: String(d.data()?.name || d.id),
-      }))
+      .map((d) => {
+        const data = d.data() || {};
+        return {
+          id: d.id,
+          name: String(data.name || d.id),
+          status: String(data.status || "active").toLowerCase(),
+          visibleToWorkerUids: Array.isArray(data.visibleToWorkerUids)
+            ? data.visibleToWorkerUids
+            : [],
+        };
+      })
+      .filter((obj) => {
+        // active — видят все workers
+        if (obj.status === "active") return true;
+
+        // inactive — не видит никто из workers
+        if (obj.status === "inactive") return false;
+
+        // rework — видят только выбранные сотрудники
+        if (obj.status === "rework") {
+          return obj.visibleToWorkerUids.includes(currentUid);
+        }
+
+        return false;
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
+
     setObjects(list);
   }
 
@@ -101,15 +123,18 @@ export default function WorkdayPage() {
           status,
         });
 
-        await loadObjects();
+        await loadObjects(u.uid);
 
         if (dayRef) {
           const d = await getDoc(dayRef);
           if (d.exists()) {
             const day = d.data() || {};
             setDayDoc(day);
-            // если объект уже сохранён — подставляем в селект
-            if (day.objectId) setObjectId(String(day.objectId));
+
+            // если объект уже выбран в документе дня — подставляем
+            if (day.objectId) {
+              setObjectId(String(day.objectId));
+            }
           } else {
             setDayDoc(null);
           }
@@ -165,7 +190,11 @@ export default function WorkdayPage() {
 
       if (s.exists()) {
         const d = s.data() || {};
-        if (d.startAt) return setMsg("Рабочий день уже начат.");
+        if (d.startAt) {
+          setMsg("Рабочий день уже начат.");
+          return;
+        }
+
         await updateDoc(dayRef, {
           dateKey,
           objectId,
@@ -188,6 +217,7 @@ export default function WorkdayPage() {
           updatedAt: serverTimestamp(),
         });
       }
+
       await refreshDay();
     } catch (e) {
       setMsg(e?.message || "Ошибка: не удалось начать день");
@@ -200,12 +230,24 @@ export default function WorkdayPage() {
 
     try {
       const s = await getDoc(dayRef);
-      if (!s.exists()) return setMsg("Сначала начни рабочий день.");
+      if (!s.exists()) {
+        setMsg("Сначала начни рабочий день.");
+        return;
+      }
 
       const d = s.data() || {};
-      if (!d.startAt) return setMsg("Сначала начни рабочий день.");
-      if (d.endAt) return setMsg("День уже завершён.");
-      if (d.breakStartAt) return setMsg("Перерыв уже начат.");
+      if (!d.startAt) {
+        setMsg("Сначала начни рабочий день.");
+        return;
+      }
+      if (d.endAt) {
+        setMsg("День уже завершён.");
+        return;
+      }
+      if (d.breakStartAt) {
+        setMsg("Перерыв уже начат.");
+        return;
+      }
 
       await updateDoc(dayRef, {
         breakStartAt: serverTimestamp(),
@@ -224,12 +266,24 @@ export default function WorkdayPage() {
 
     try {
       const s = await getDoc(dayRef);
-      if (!s.exists()) return setMsg("Нет активного рабочего дня.");
+      if (!s.exists()) {
+        setMsg("Нет активного рабочего дня.");
+        return;
+      }
 
       const d = s.data() || {};
-      if (!d.breakStartAt) return setMsg("Перерыв ещё не начат.");
-      if (d.breakEndAt) return setMsg("Перерыв уже завершён.");
-      if (d.endAt) return setMsg("День уже завершён.");
+      if (!d.breakStartAt) {
+        setMsg("Перерыв ещё не начат.");
+        return;
+      }
+      if (d.breakEndAt) {
+        setMsg("Перерыв уже завершён.");
+        return;
+      }
+      if (d.endAt) {
+        setMsg("День уже завершён.");
+        return;
+      }
 
       await updateDoc(dayRef, {
         breakEndAt: serverTimestamp(),
@@ -248,14 +302,24 @@ export default function WorkdayPage() {
 
     try {
       const s = await getDoc(dayRef);
-      if (!s.exists()) return setMsg("Сначала начни рабочий день.");
+      if (!s.exists()) {
+        setMsg("Сначала начни рабочий день.");
+        return;
+      }
 
       const d = s.data() || {};
-      if (!d.startAt) return setMsg("Сначала начни рабочий день.");
-      if (d.endAt) return setMsg("День уже завершён.");
+      if (!d.startAt) {
+        setMsg("Сначала начни рабочий день.");
+        return;
+      }
+      if (d.endAt) {
+        setMsg("День уже завершён.");
+        return;
+      }
 
       if (d.breakStartAt && !d.breakEndAt) {
-        return setMsg("Сначала заверши перерыв, потом заканчивай день.");
+        setMsg("Сначала заверши перерыв, потом заканчивай день.");
+        return;
       }
 
       await updateDoc(dayRef, {
@@ -293,7 +357,7 @@ export default function WorkdayPage() {
               <select
                 value={objectId}
                 onChange={(e) => setObjectId(e.target.value)}
-                disabled={started} // после старта не меняем
+                disabled={started}
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -302,16 +366,21 @@ export default function WorkdayPage() {
                   background: "#fff",
                 }}
               >
-                <option value="">{objects.length ? "Выбери объект..." : "Нет объектов"}</option>
+                <option value="">
+                  {objects.length ? "Выбери объект..." : "Нет доступных объектов"}
+                </option>
+
                 {objects.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
                   </option>
                 ))}
               </select>
+
               {started ? (
                 <div style={{ marginTop: 8, opacity: 0.7, fontSize: 13 }}>
-                  Объект зафиксирован на день: <b>{dayDoc?.objectName || getSelectedObjectName()}</b>
+                  Объект зафиксирован на день:{" "}
+                  <b>{dayDoc?.objectName || getSelectedObjectName()}</b>
                 </div>
               ) : null}
             </div>
