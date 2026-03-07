@@ -1,4 +1,151 @@
 /* styles/accountant.module.css */
-/* Пока совпадает с worker, потом добавим таблицы/отчёты */
+/* Кабинет бухгалтера */
 
-@import "./worker.module.css";
+.page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 28px 16px;
+  background: transparent;
+}
+
+.card {
+  width: 100%;
+  max-width: 980px;
+  background: rgba(245, 250, 255, 0.94);
+  border-radius: 22px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.16);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.title {
+  font-size: 44px;
+  line-height: 1.05;
+  margin: 0;
+}
+
+.subtitle {
+  margin-top: 6px;
+  font-size: 16px;
+  color: rgba(30, 64, 175, 0.75);
+}
+
+.infoBox {
+  margin-top: 16px;
+  padding: 16px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.infoRow {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.label {
+  font-weight: 700;
+  color: rgba(30, 64, 175, 0.82);
+}
+
+.value {
+  font-weight: 500;
+}
+
+.actionsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.actionButton {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-weight: 700;
+  text-decoration: none;
+  color: inherit;
+}
+
+.actionButton:hover {
+  background: rgba(255, 255, 255, 0.98);
+  transform: translateY(-1px);
+}
+
+.actionButton:active {
+  transform: translateY(0);
+}
+
+.footer {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.btnSecondary {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.link {
+  text-decoration: none;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.msg {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+}
+
+.divider {
+  height: 1px;
+  margin: 18px 0;
+  background: rgba(59, 130, 246, 0.14);
+}
+
+@media (max-width: 720px) {
+  .card {
+    padding: 18px;
+  }
+
+  .title {
+    font-size: 34px;
+  }
+
+  .infoRow {
+    grid-template-columns: 140px 1fr;
+  }
+
+  .actionsGrid {
+    grid-template-columns: 1fr;
+  }
+}
