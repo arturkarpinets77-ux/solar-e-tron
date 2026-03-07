@@ -1,4 +1,6 @@
+// pages/manager/objects.js
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -19,6 +21,10 @@ import {
 import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
 
+const MapPicker = dynamic(() => import("../../components/MapPicker"), {
+  ssr: false,
+});
+
 function normalizeObjectKey(value) {
   return String(value || "")
     .trim()
@@ -38,13 +44,18 @@ export default function ManagerObjectsPage() {
   const [objects, setObjects] = useState([]);
   const [workers, setWorkers] = useState([]);
 
-  // форма
   const [objectName, setObjectName] = useState("");
-  const [objectStatus, setObjectStatus] = useState("active"); // active | inactive | rework
+  const [objectStatus, setObjectStatus] = useState("active");
   const [selectedWorkers, setSelectedWorkers] = useState([]);
 
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // карта
+  const [showMap, setShowMap] = useState(false);
+  const [mapLat, setMapLat] = useState(60.1699); // Helsinki по умолчанию
+  const [mapLng, setMapLng] = useState(24.9384);
+  const [radiusMeters, setRadiusMeters] = useState(500);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -129,6 +140,11 @@ export default function ManagerObjectsPage() {
     setObjectStatus("active");
     setSelectedWorkers([]);
     setEditingId(null);
+
+    setMapLat(60.1699);
+    setMapLng(24.9384);
+    setRadiusMeters(500);
+    setShowMap(false);
   }
 
   function toggleWorker(uid) {
@@ -163,8 +179,13 @@ export default function ManagerObjectsPage() {
     try {
       const payload = {
         name,
-        status: objectStatus, // active | inactive | rework
+        status: objectStatus,
         visibleToWorkerUids: objectStatus === "rework" ? selectedWorkers : [],
+        geo: {
+          lat: Number(mapLat),
+          lng: Number(mapLng),
+          radiusMeters: Number(radiusMeters || 0),
+        },
         updatedAt: serverTimestamp(),
       };
 
@@ -191,7 +212,15 @@ export default function ManagerObjectsPage() {
     setEditingId(item.id);
     setObjectName(String(item.name || ""));
     setObjectStatus(String(item.status || "active"));
-    setSelectedWorkers(Array.isArray(item.visibleToWorkerUids) ? item.visibleToWorkerUids : []);
+    setSelectedWorkers(
+      Array.isArray(item.visibleToWorkerUids) ? item.visibleToWorkerUids : []
+    );
+
+    setMapLat(Number(item?.geo?.lat || 60.1699));
+    setMapLng(Number(item?.geo?.lng || 24.9384));
+    setRadiusMeters(Number(item?.geo?.radiusMeters || 500));
+    setShowMap(true);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -215,10 +244,10 @@ export default function ManagerObjectsPage() {
       <div className={`${styles.card} ${typo.base}`}>
         <div className={styles.header}>
           <div>
-            <div className={`${styles.title} ${typo.title}`}>
-              Объекты
+            <div className={`${styles.title} ${typo.title}`}>Объекты</div>
+            <div className={styles.subtitle}>
+              Управление объектами директора / администратора
             </div>
-            <div className={styles.subtitle}>Управление объектами директора / администратора</div>
           </div>
         </div>
 
@@ -251,6 +280,66 @@ export default function ManagerObjectsPage() {
               </span>
             </div>
 
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                onClick={() => setShowMap((prev) => !prev)}
+              >
+                {showMap ? "Скрыть карту" : "Выбрать на карте"}
+              </button>
+            </div>
+
+            {showMap ? (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                  padding: 12,
+                  borderRadius: 14,
+                  border: "1px solid rgba(120, 90, 20, 0.16)",
+                  background: "rgba(255, 252, 240, 0.70)",
+                }}
+              >
+                <MapPicker
+                  lat={mapLat}
+                  lng={mapLng}
+                  radiusMeters={radiusMeters}
+                  onChange={(next) => {
+                    setMapLat(next.lat);
+                    setMapLng(next.lng);
+                    setRadiusMeters(next.radiusMeters);
+                  }}
+                />
+
+                <div className={styles.infoRow}>
+                  <span className={styles.label}>Широта:</span>
+                  <span className={styles.value}>{Number(mapLat).toFixed(6)}</span>
+                </div>
+
+                <div className={styles.infoRow}>
+                  <span className={styles.label}>Долгота:</span>
+                  <span className={styles.value}>{Number(mapLng).toFixed(6)}</span>
+                </div>
+
+                <div className={styles.infoRow}>
+                  <span className={styles.label}>Радиус (м):</span>
+                  <span className={styles.value}>
+                    <input
+                      type="range"
+                      min="100"
+                      max="2000"
+                      step="50"
+                      value={radiusMeters}
+                      onChange={(e) => setRadiusMeters(Number(e.target.value))}
+                      style={{ width: "100%" }}
+                    />
+                    <div style={{ marginTop: 6 }}>{radiusMeters} м</div>
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
             {objectStatus === "rework" ? (
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 8 }}>
@@ -274,7 +363,9 @@ export default function ManagerObjectsPage() {
                   ) : (
                     workers.map((w) => {
                       const fullName =
-                        `${w.firstName || ""} ${w.lastName || ""}`.trim() || w.email || w.id;
+                        `${w.firstName || ""} ${w.lastName || ""}`.trim() ||
+                        w.email ||
+                        w.id;
 
                       return (
                         <label
@@ -360,10 +451,22 @@ export default function ManagerObjectsPage() {
                   <b>Статус:</b> {statusLabel(item.status)}
                 </div>
 
+                <div>
+                  <b>Координаты:</b>{" "}
+                  {item?.geo?.lat && item?.geo?.lng
+                    ? `${Number(item.geo.lat).toFixed(6)}, ${Number(item.geo.lng).toFixed(6)}`
+                    : "-"}
+                </div>
+
+                <div>
+                  <b>Радиус:</b> {item?.geo?.radiusMeters || 0} м
+                </div>
+
                 {item.status === "rework" ? (
                   <div>
                     <b>Видят сотрудники:</b>{" "}
-                    {Array.isArray(item.visibleToWorkerUids) && item.visibleToWorkerUids.length
+                    {Array.isArray(item.visibleToWorkerUids) &&
+                    item.visibleToWorkerUids.length
                       ? item.visibleToWorkerUids.length
                       : 0}
                   </div>
