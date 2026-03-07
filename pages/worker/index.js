@@ -9,6 +9,17 @@ import { doc, getDoc } from "firebase/firestore";
 import styles from "../../styles/worker.module.css";
 import typo from "../../styles/typography.module.css";
 
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "accountant") return "Бухгалтер";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+
+  return role || "-";
+}
+
 export default function WorkerDashboard() {
   const router = useRouter();
 
@@ -38,9 +49,8 @@ export default function WorkerDashboard() {
         const role = String(data.role || "").trim().toLowerCase();
         const status = String(data.status || "").trim().toLowerCase();
 
-        // Защита: worker-страница только для worker + active
         if (status !== "active" || role !== "worker") {
-          router.replace("/dashboard"); // распределитель отправит куда надо
+          router.replace("/dashboard");
           return;
         }
 
@@ -126,28 +136,32 @@ export default function WorkerDashboard() {
             <span className={styles.value}>{profile.personalNumber || "-"}</span>
           </div>
           <div className={styles.infoRow}>
+            <span className={styles.label}>Роль:</span>
+            <span className={styles.value}>{roleLabel(profile.role)}</span>
+          </div>
+          <div className={styles.infoRow}>
             <span className={styles.label}>Статус:</span>
             <span className={styles.value}>{profile.status || "-"}</span>
           </div>
         </div>
 
         <div className={styles.actionsGrid}>
-  <Link href="/worker/workday" className={styles.actionButton}>
-  Отметка рабочего дня
-</Link>
+          <Link href="/worker/workday" className={styles.actionButton}>
+            Отметка рабочего дня
+          </Link>
 
-  <Link href="/worker/photo" legacyBehavior>
-    <a className={styles.actionButton}>Добавить фотоотчёт</a>
-  </Link>
+          <Link href="/worker/photo" legacyBehavior>
+            <a className={styles.actionButton}>Добавить фотоотчёт</a>
+          </Link>
 
-  <Link href="/worker/history" legacyBehavior>
-    <a className={styles.actionButton}>История рабочего времени</a>
-  </Link>
+          <Link href="/worker/history" legacyBehavior>
+            <a className={styles.actionButton}>История рабочего времени</a>
+          </Link>
 
-  <Link href="/worker/profile" legacyBehavior>
-    <a className={styles.actionButton}>Мой профиль</a>
-  </Link>
-</div>
+          <Link href="/worker/profile" legacyBehavior>
+            <a className={styles.actionButton}>Мой профиль</a>
+          </Link>
+        </div>
 
         {msg ? <div className={styles.msg}>{msg}</div> : null}
 
