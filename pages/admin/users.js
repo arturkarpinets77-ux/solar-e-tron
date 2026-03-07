@@ -1,4 +1,3 @@
-// pages/admin/users.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -19,16 +18,27 @@ import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
 
 const ROLE_OPTIONS = [
-  { value: "worker", label: "worker" },
-  { value: "accountant", label: "accountant" },
-  { value: "director", label: "director" },
+  { value: "worker", label: "Работник" },
+  { value: "accountant", label: "Бухгалтер" },
+  { value: "director", label: "Директор" },
 ];
 
 const STATUS_OPTIONS = [
-  { value: "active", label: "active" },
-  { value: "pending", label: "pending" },
-  { value: "inactive", label: "inactive" },
+  { value: "active", label: "Активный" },
+  { value: "pending", label: "Ожидает подтверждения" },
+  { value: "inactive", label: "Неактивный" },
 ];
+
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "accountant") return "Бухгалтер";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+
+  return role || "-";
+}
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -112,7 +122,7 @@ export default function AdminUsersPage() {
     const activeList = allSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((u) => String(u.status || "").toLowerCase() !== "pending")
-      .filter((u) => u.id !== currentUid) // себя не даём менять
+      .filter((u) => u.id !== currentUid)
       .sort((a, b) => {
         const aName = fullName(a);
         const bName = fullName(b);
@@ -258,7 +268,7 @@ export default function AdminUsersPage() {
 
                 <div><b>E-mail:</b> {u.email || "-"}</div>
                 <div><b>Личный номер:</b> {u.personalNumber || "-"}</div>
-                <div><b>Роль:</b> {u.role || "-"}</div>
+                <div><b>Роль:</b> {roleLabel(u.role)}</div>
                 <div><b>Статус:</b> {u.status || "-"}</div>
 
                 <div style={{ marginTop: 6 }}>
