@@ -403,24 +403,32 @@ export default function AccountantPage() {
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {summaryRows.map((r) => (
-                <div
-                  key={r.id}
-                  style={{
-                    borderRadius: 14,
-                    border: "1px solid rgba(15,23,42,0.12)",
-                    background: "rgba(255,255,255,0.85)",
-                    padding: 14,
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ fontWeight: 800 }}>{r.name}</div>
-                  <div><b>Личный номер:</b> {r.personalNumber}</div>
-                  <div><b>Роль:</b> {r.role}</div>
-                  <div><b>Отработано дней:</b> {r.workedDays}</div>
-                  <div><b>Отработано часов:</b> {fmtHM(r.totalMinutes)}</div>
-                </div>
-              ))}
+  <button
+    key={r.id}
+    type="button"
+    onClick={() => setSelectedWorkerId(r.id)}
+    style={{
+      borderRadius: 14,
+      border: "1px solid rgba(15,23,42,0.12)",
+      background: "rgba(255,255,255,0.85)",
+      padding: 14,
+      display: "grid",
+      gap: 8,
+      width: "100%",
+      textAlign: "left",
+      cursor: "pointer",
+    }}
+  >
+    <div style={{ fontWeight: 800 }}>{r.name}</div>
+    <div><b>Личный номер:</b> {r.personalNumber}</div>
+    <div><b>Роль:</b> {r.role}</div>
+    <div><b>Отработано дней:</b> {r.workedDays}</div>
+    <div><b>Отработано часов:</b> {fmtHM(r.totalMinutes)}</div>
+    <div style={{ fontWeight: 700, color: "#1e40af", marginTop: 4 }}>
+      Подробно
+    </div>
+  </button>
+))}
             </div>
           )
         ) : rows.length === 0 ? (
