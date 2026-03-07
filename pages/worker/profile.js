@@ -1,4 +1,3 @@
-// pages/worker/profile.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -25,8 +24,18 @@ import typo from "../../styles/typography.module.css";
 
 function fmtDate(yyyyMmDd) {
   if (!yyyyMmDd) return "-";
-  // ожидаем "YYYY-MM-DD"
   return yyyyMmDd;
+}
+
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "accountant") return "Бухгалтер";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+
+  return role || "-";
 }
 
 export default function WorkerProfilePage() {
@@ -44,13 +53,11 @@ export default function WorkerProfilePage() {
 
   const [profile, setProfile] = useState(null);
 
-  // форма документа
   const [docTitle, setDocTitle] = useState("");
-  const [expiryDate, setExpiryDate] = useState(""); // YYYY-MM-DD
+  const [expiryDate, setExpiryDate] = useState("");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  // список документов
   const [docsList, setDocsList] = useState([]);
 
   useEffect(() => {
@@ -78,7 +85,6 @@ export default function WorkerProfilePage() {
         const role = String(data.role || "").trim().toLowerCase();
         const status = String(data.status || "").trim().toLowerCase();
 
-        // только worker + active
         if (role !== "worker" || status !== "active") {
           router.replace("/dashboard");
           return;
@@ -113,7 +119,6 @@ export default function WorkerProfilePage() {
     return () => unsubAuth();
   }, [router]);
 
-  // подписка на Documents
   useEffect(() => {
     if (!db || !user?.uid) return;
 
@@ -150,14 +155,12 @@ export default function WorkerProfilePage() {
     setUploading(true);
 
     try {
-      // 1) создаём docId заранее
       const newDocRef = doc(collection(db, "Users", user.uid, "Documents"));
       const docId = newDocRef.id;
 
-      // 2) пишем метаданные (без url, пока грузим)
       await setDoc(newDocRef, {
         title,
-        expiryDate, // YYYY-MM-DD
+        expiryDate,
         fileName: file.name,
         contentType: file.type || "",
         size: file.size || 0,
@@ -167,7 +170,6 @@ export default function WorkerProfilePage() {
         updatedAt: serverTimestamp(),
       });
 
-      // 3) грузим в Storage
       const storageRef = ref(
         storage,
         `Users/${user.uid}/Documents/${docId}/${file.name}`
@@ -176,19 +178,16 @@ export default function WorkerProfilePage() {
         contentType: file.type || "application/octet-stream",
       });
 
-      // 4) получаем ссылку и дописываем
       const url = await getDownloadURL(storageRef);
       await updateDoc(newDocRef, {
         url,
         updatedAt: serverTimestamp(),
       });
 
-      // 5) чистим форму
       setDocTitle("");
       setExpiryDate("");
       setFile(null);
 
-      // сброс input file (чтобы в UI стало "файл не выбран")
       const inp = document.getElementById("docFileInput");
       if (inp) inp.value = "";
     } catch (e) {
@@ -243,7 +242,7 @@ export default function WorkerProfilePage() {
           </div>
           <div className={styles.infoRow}>
             <span className={styles.label}>Роль</span>
-            <span className={styles.value}>{profile.role || "-"}</span>
+            <span className={styles.value}>{roleLabel(profile.role)}</span>
           </div>
           <div className={styles.infoRow}>
             <span className={styles.label}>Статус</span>
@@ -358,7 +357,6 @@ export default function WorkerProfilePage() {
                       <span>(ссылка ещё не готова)</span>
                     )}
                   </div>
-                  {/* Удаление здесь НЕ показываем (по твоей логике — только директор/админ) */}
                 </div>
               ))}
             </div>
