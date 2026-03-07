@@ -1,4 +1,3 @@
-// pages/manager/index.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -15,6 +14,17 @@ import {
 
 import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
+
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "accountant") return "Бухгалтер";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+
+  return role || "-";
+}
 
 function dateKeyLocalYYYYMMDD() {
   const d = new Date();
@@ -251,7 +261,7 @@ export default function ManagerDashboardPage() {
           </div>
           <div className={styles.infoRow}>
             <span className={styles.label}>Роль:</span>
-            <span className={styles.value}>{profile.role || "-"}</span>
+            <span className={styles.value}>{roleLabel(profile.role)}</span>
           </div>
           <div className={styles.infoRow}>
             <span className={styles.label}>Статус:</span>
@@ -273,14 +283,15 @@ export default function ManagerDashboardPage() {
           <Link href="/manager/objects" legacyBehavior>
             <a className={styles.actionButton}>Объекты</a>
           </Link>
-  
-              <Link href="/manager/documents" legacyBehavior>
-              <a className={styles.actionButton}>Документы работников</a>
-              </Link>
-           <Link href="/manager/workdays" legacyBehavior>
-              <a className={styles.actionButton}>Рабочее время работников</a>
-              </Link>  
-              
+
+          <Link href="/manager/documents" legacyBehavior>
+            <a className={styles.actionButton}>Документы работников</a>
+          </Link>
+
+          <Link href="/manager/workdays" legacyBehavior>
+            <a className={styles.actionButton}>Рабочее время работников</a>
+          </Link>
+
           <button
             className={styles.actionButton}
             type="button"
