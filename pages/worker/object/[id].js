@@ -142,11 +142,6 @@ export default function WorkerObjectDetailsPage() {
               </span>
             </div>
 
-            <div className={styles.infoRow}>
-              <span className={styles.label}>Радиус:</span>
-              <span className={styles.value}>{objectItem?.geo?.radiusMeters || 0} м</span>
-            </div>
-
             <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
