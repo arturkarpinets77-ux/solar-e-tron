@@ -1,4 +1,3 @@
-// pages/accountant/index.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -74,6 +73,17 @@ function fullName(u) {
     u.email ||
     "-"
   );
+}
+
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "accountant") return "Бухгалтер";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+
+  return role || "-";
 }
 
 function calcNetMinutes(d) {
@@ -357,7 +367,7 @@ export default function AccountantPage() {
             [
               r.name,
               r.personalNumber,
-              r.role,
+              roleLabel(r.role),
               r.workedDays,
               fmtHM(r.totalMinutes),
             ]
@@ -387,7 +397,7 @@ export default function AccountantPage() {
       ];
 
       const lines = [
-        [workerName, selectedPerson?.personalNumber || "-", selectedPerson?.role || "-", monthValue]
+        [workerName, selectedPerson?.personalNumber || "-", roleLabel(selectedPerson?.role || "-"), monthValue]
           .map(csvEscape)
           .join(";"),
         header.map(csvEscape).join(";"),
@@ -459,7 +469,7 @@ export default function AccountantPage() {
                     <tr>
                       <td>${htmlEscape(r.name)}</td>
                       <td>${htmlEscape(r.personalNumber)}</td>
-                      <td>${htmlEscape(r.role)}</td>
+                      <td>${htmlEscape(roleLabel(r.role))}</td>
                       <td>${htmlEscape(r.workedDays)}</td>
                       <td>${htmlEscape(fmtHM(r.totalMinutes))}</td>
                     </tr>
@@ -477,7 +487,7 @@ export default function AccountantPage() {
           <div class="meta">
             <div><b>Сотрудник:</b> ${htmlEscape(workerName)}</div>
             <div><b>Личный номер:</b> ${htmlEscape(selectedPerson?.personalNumber || "-")}</div>
-            <div><b>Роль:</b> ${htmlEscape(selectedPerson?.role || "-")}</div>
+            <div><b>Роль:</b> ${htmlEscape(roleLabel(selectedPerson?.role || "-"))}</div>
             <div><b>Месяц:</b> ${htmlEscape(monthValue)}</div>
           </div>
 
@@ -615,7 +625,7 @@ export default function AccountantPage() {
                   <option key={w.id} value={w.id}>
                     {fullName(w)}
                     {w.personalNumber ? ` — ${w.personalNumber}` : ""}
-                    {w.role ? ` — ${String(w.role).toLowerCase()}` : ""}
+                    {w.role ? ` — ${roleLabel(w.role)}` : ""}
                   </option>
                 ))}
               </select>
@@ -654,7 +664,7 @@ export default function AccountantPage() {
                   ? ` — ${selectedPerson.personalNumber}`
                   : ""}
                 {selectedPerson.role
-                  ? ` — ${String(selectedPerson.role).toLowerCase()}`
+                  ? ` — ${roleLabel(selectedPerson.role)}`
                   : ""}
               </div>
 
@@ -750,7 +760,7 @@ export default function AccountantPage() {
                 >
                   <div style={{ fontWeight: 800 }}>{r.name}</div>
                   <div><b>Личный номер:</b> {r.personalNumber}</div>
-                  <div><b>Роль:</b> {r.role}</div>
+                  <div><b>Роль:</b> {roleLabel(r.role)}</div>
                   <div><b>Отработано дней:</b> {r.workedDays}</div>
                   <div><b>Отработано часов:</b> {fmtHM(r.totalMinutes)}</div>
                   <div style={{ fontWeight: 700, color: "#1e40af", marginTop: 4 }}>
@@ -820,7 +830,6 @@ export default function AccountantPage() {
     </main>
   );
 }
-
 const inputStyle = {
   width: "100%",
   padding: "10px 12px",
