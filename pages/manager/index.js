@@ -273,7 +273,11 @@ export default function ManagerDashboardPage() {
           <Link href="/manager/objects" legacyBehavior>
             <a className={styles.actionButton}>Объекты</a>
           </Link>
-
+  
+              <Link href="/manager/documents" legacyBehavior>
+              <a className={styles.actionButton}>Документы работников</a>
+              </Link>
+              
           <button
             className={styles.actionButton}
             type="button"
