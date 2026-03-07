@@ -147,9 +147,9 @@ export default function ManagerDashboardPage() {
             <a className={styles.actionButton}>Пользователи</a>
           </Link>
 
-          <button className={styles.actionButton} type="button" disabled>
-            Объекты
-          </button>
+          <Link href="/manager/objects" legacyBehavior>
+  <a className={styles.actionButton}>Объекты</a>
+</Link>
 
           <button className={styles.actionButton} type="button" disabled>
             Начать рабочий день
