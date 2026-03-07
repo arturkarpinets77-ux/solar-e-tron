@@ -120,15 +120,15 @@ export default function AdminUsersPage() {
 
     const allSnap = await getDocs(collection(db, "Users"));
     const activeList = allSnap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((u) => String(u.status || "").toLowerCase() !== "pending")
-      .filter((u) => u.id !== currentUid)
-      .sort((a, b) => {
-        const aName = fullName(a);
-        const bName = fullName(b);
-        return aName.localeCompare(bName);
-      });
-
+  .map((d) => ({ id: d.id, ...d.data() }))
+  .filter((u) => String(u.status || "").toLowerCase() !== "pending")
+  .filter((u) => String(u.role || "").toLowerCase() !== "admin")
+  .filter((u) => u.id !== currentUid)
+  .sort((a, b) => {
+    const aName = fullName(a);
+    const bName = fullName(b);
+    return aName.localeCompare(bName);
+  });
     setPendingUsers(pendingList);
     setActiveUsers(activeList);
 
