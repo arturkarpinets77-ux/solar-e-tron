@@ -1,3 +1,4 @@
+// pages/dashboard.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
@@ -5,21 +6,25 @@ import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
-export default function DashboardRouter() {
+export default function DashboardPage() {
   const router = useRouter();
-  const [msg, setMsg] = useState("Загрузка...");
+  const [msg, setMsg] = useState("Проверка доступа...");
 
   useEffect(() => {
-    if (!auth || !db) return;
+    if (!auth || !db) {
+      setMsg("Firebase не инициализирован.");
+      return;
+    }
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (!user) {
-          router.replace("/login");
-          return;
-        }
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
 
+      try {
         const snap = await getDoc(doc(db, "Users", user.uid));
+
         if (!snap.exists()) {
           await signOut(auth);
           router.replace("/login");
@@ -30,33 +35,31 @@ export default function DashboardRouter() {
         const role = String(data.role || "").trim().toLowerCase();
         const status = String(data.status || "").trim().toLowerCase();
 
-        // Статус обязателен
+        // Неактивных не пускаем в кабинеты
         if (status !== "active") {
-          await signOut(auth);
-          router.replace("/login");
+          setMsg("Профиль ещё не активирован директором/админом.");
           return;
         }
 
-        // Редирект по роли
+        // Распределение по ролям
         if (role === "worker") {
           router.replace("/worker");
           return;
         }
 
+        if (role === "director" || role === "admin") {
+          router.replace("/manager");
+          return;
+        }
+
         if (role === "accountant") {
-          router.replace("/accountant"); // создадим позже
+          router.replace("/accountant");
           return;
         }
 
-        if (role === "director" || role === "admin" || role === "manager") {
-          router.replace("/manager"); // создадим позже
-          return;
-        }
-
-        // Если роль неизвестна
-        setMsg("Неизвестная роль пользователя. Обратитесь к администратору.");
+        setMsg("Неизвестная роль пользователя.");
       } catch (e) {
-        setMsg(e?.message || "Ошибка распределителя кабинета");
+        setMsg(e?.message || "Ошибка загрузки профиля.");
       }
     });
 
@@ -64,10 +67,31 @@ export default function DashboardRouter() {
   }, [router]);
 
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ background: "rgba(255,255,255,0.9)", padding: 16, borderRadius: 12 }}>
-        {msg}
-      </div>
+    <main style={styles.page}>
+      <div style={styles.card}>{msg}</div>
     </main>
   );
 }
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    background: "transparent",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+  },
+  card: {
+    width: "100%",
+    maxWidth: 520,
+    background: "rgba(255,255,255,0.92)",
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+    textAlign: "center",
+    fontSize: 18,
+    fontWeight: 600,
+  },
+};
