@@ -277,6 +277,9 @@ export default function ManagerDashboardPage() {
               <Link href="/manager/documents" legacyBehavior>
               <a className={styles.actionButton}>Документы работников</a>
               </Link>
+           <Link href="/manager/workdays" legacyBehavior>
+              <a className={styles.actionButton}>Рабочее время работников</a>
+              </Link>  
               
           <button
             className={styles.actionButton}
