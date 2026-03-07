@@ -141,10 +141,6 @@ export default function WorkerObjectsPage() {
                     : "-"}
                 </div>
 
-                <div>
-                  <b>Радиус зоны:</b> {item?.geo?.radiusMeters || 0} м
-                </div>
-
                 <div style={{ marginTop: 4 }}>
                   <Link
                     href={`/worker/object/${encodeURIComponent(item.id)}`}
