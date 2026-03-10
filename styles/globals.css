@@ -58,7 +58,7 @@ body {
   width: min(760px, 92vw);
   padding: 44px 48px 42px;
   border-radius: 26px;
-  margin-top: -100px:
+  margin-top: -100px;
 
   /* Главное: прозрачность + слоёный градиент */
   background:
