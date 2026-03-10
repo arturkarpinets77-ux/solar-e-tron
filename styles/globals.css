@@ -114,9 +114,9 @@ body {
 .brandTitle{
   margin: 0 0 12px 0;
   font-size: clamp(44px, 5vw, 64px);
-  color: #000
   font-weight: 500;
   letter-spacing: 0.5px;
+  color: #000
 
   /* лёгкое свечение текста */
   text-shadow:
@@ -127,7 +127,7 @@ body {
 .brandSubtitle{
   margin: 0 0 28px 0;
   font-size: clamp(14px, 1.2vw, 16px);
-  color: rgba(255,255,255,0.90);
+  color: #000
   text-shadow: 0 10px 22px rgba(0,0,0,0.30);
 }
 
