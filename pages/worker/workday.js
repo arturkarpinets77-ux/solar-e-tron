@@ -348,38 +348,31 @@ export default function WorkerWorkdayPage() {
   }
 
   async function handleEndDay() {
-    if (!profile?.uid) return;
+  if (!profile?.uid) return;
 
-    setMsg("");
-    setBusy(true);
+  setMsg("");
+  setBusy(true);
 
-    try {
-      const currentSnap = await getDoc(doc(db, "Users", profile.uid, "Workdays", dateKey));
-      if (!currentSnap.exists()) {
-        throw new Error("Сначала начни рабочий день.");
-      }
-
-      const currentDay = currentSnap.data() || {};
-      const objectId = String(currentDay.objectId || selectedObjectId || "");
-      const objectItem = objects.find((o) => o.id === objectId);
-
-      const geoCheck = await ensureInsideObjectRadius(objectItem);
-
-      await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
-        endAt: serverTimestamp(),
-        endGeo: geoCheck,
-        status: "ended",
-        updatedAt: serverTimestamp(),
-      });
-
-      await loadDay(profile.uid);
-      setMsg("Рабочий день завершён.");
-    } catch (e) {
-      setMsg(e?.message || "Не удалось завершить рабочий день.");
-    } finally {
-      setBusy(false);
+  try {
+    const currentSnap = await getDoc(doc(db, "Users", profile.uid, "Workdays", dateKey));
+    if (!currentSnap.exists()) {
+      throw new Error("Сначала начни рабочий день.");
     }
+
+    await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
+      endAt: serverTimestamp(),
+      status: "ended",
+      updatedAt: serverTimestamp(),
+    });
+
+    await loadDay(profile.uid);
+    setMsg("Рабочий день завершён.");
+  } catch (e) {
+    setMsg(e?.message || "Не удалось завершить рабочий день.");
+  } finally {
+    setBusy(false);
   }
+}
 
   if (loading) {
     return (
