@@ -88,7 +88,7 @@ function getCurrentPositionAsync() {
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
+        timeout: 25000,
         maximumAge: 0,
       }
     );
@@ -174,10 +174,7 @@ export default function WorkerWorkdayPage() {
 
         setProfile(nextProfile);
 
-        await Promise.all([
-          loadObjects(user.uid),
-          loadDay(user.uid),
-        ]);
+        await Promise.all([loadObjects(user.uid), loadDay(user.uid)]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки рабочего дня");
       } finally {
@@ -228,21 +225,38 @@ export default function WorkerWorkdayPage() {
     const workerLng = Number(pos.coords.longitude);
     const accuracy = Number(pos.coords.accuracy || 0);
 
+    if (!Number.isFinite(workerLat) || !Number.isFinite(workerLng)) {
+      throw new Error("Не удалось получить координаты.");
+    }
+
+    // Если точность совсем плохая — просим повторить попытку
+    if (accuracy > 150) {
+      throw new Error(
+        `Геолокация пока слишком неточная (${Math.round(
+          accuracy
+        )} м). Подожди немного и попробуй ещё раз на открытом месте.`
+      );
+    }
+
     const dist = distanceMeters(workerLat, workerLng, objLat, objLng);
 
-    if (dist > radiusMeters) {
+    // Учитываем погрешность GPS
+    const allowedDistance = radiusMeters + Math.max(accuracy, 50);
+
+    if (dist > allowedDistance) {
       throw new Error(
-        `Ты находишься вне зоны объекта. До границы примерно ${Math.round(
-          dist - radiusMeters
-        )} м.`
+        `Ты находишься вне зоны объекта. До объекта примерно ${Math.round(
+          dist
+        )} м. Точность GPS сейчас ${Math.round(accuracy)} м.`
       );
     }
 
     return {
       lat: workerLat,
       lng: workerLng,
-      accuracy,
+      accuracy: Math.round(accuracy),
       distanceToObjectMeters: Math.round(dist),
+      allowedDistanceMeters: Math.round(allowedDistance),
       checkedAt: new Date(),
       objectLat: objLat,
       objectLng: objLng,
@@ -295,7 +309,9 @@ export default function WorkerWorkdayPage() {
       );
 
       await loadDay(profile.uid);
-      setMsg("Рабочий день начат.");
+      setMsg(
+        `Рабочий день начат. До объекта примерно ${geoCheck.distanceToObjectMeters} м, точность GPS ${geoCheck.accuracy} м.`
+      );
     } catch (e) {
       setMsg(e?.message || "Не удалось начать рабочий день.");
     } finally {
@@ -348,31 +364,31 @@ export default function WorkerWorkdayPage() {
   }
 
   async function handleEndDay() {
-  if (!profile?.uid) return;
+    if (!profile?.uid) return;
 
-  setMsg("");
-  setBusy(true);
+    setMsg("");
+    setBusy(true);
 
-  try {
-    const currentSnap = await getDoc(doc(db, "Users", profile.uid, "Workdays", dateKey));
-    if (!currentSnap.exists()) {
-      throw new Error("Сначала начни рабочий день.");
+    try {
+      const currentSnap = await getDoc(doc(db, "Users", profile.uid, "Workdays", dateKey));
+      if (!currentSnap.exists()) {
+        throw new Error("Сначала начни рабочий день.");
+      }
+
+      await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
+        endAt: serverTimestamp(),
+        status: "ended",
+        updatedAt: serverTimestamp(),
+      });
+
+      await loadDay(profile.uid);
+      setMsg("Рабочий день завершён.");
+    } catch (e) {
+      setMsg(e?.message || "Не удалось завершить рабочий день.");
+    } finally {
+      setBusy(false);
     }
-
-    await updateDoc(doc(db, "Users", profile.uid, "Workdays", dateKey), {
-      endAt: serverTimestamp(),
-      status: "ended",
-      updatedAt: serverTimestamp(),
-    });
-
-    await loadDay(profile.uid);
-    setMsg("Рабочий день завершён.");
-  } catch (e) {
-    setMsg(e?.message || "Не удалось завершить рабочий день.");
-  } finally {
-    setBusy(false);
   }
-}
 
   if (loading) {
     return (
