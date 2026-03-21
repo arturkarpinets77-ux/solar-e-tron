@@ -1,5 +1,4 @@
-// pages/manager/objects.js
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -39,8 +38,6 @@ export default function ManagerObjectsPage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const [profile, setProfile] = useState(null);
-
   const [objects, setObjects] = useState([]);
   const [workers, setWorkers] = useState([]);
 
@@ -51,9 +48,8 @@ export default function ManagerObjectsPage() {
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // карта
   const [showMap, setShowMap] = useState(false);
-  const [mapLat, setMapLat] = useState(60.1699); // Helsinki по умолчанию
+  const [mapLat, setMapLat] = useState(60.1699);
   const [mapLng, setMapLng] = useState(24.9384);
   const [radiusMeters, setRadiusMeters] = useState(500);
 
@@ -90,12 +86,6 @@ export default function ManagerObjectsPage() {
           router.replace("/dashboard");
           return;
         }
-
-        setProfile({
-          uid: user.uid,
-          role,
-          status,
-        });
 
         await Promise.all([loadObjects(), loadWorkers()]);
       } catch (e) {
@@ -259,7 +249,7 @@ export default function ManagerObjectsPage() {
                 <input
                   value={objectName}
                   onChange={(e) => setObjectName(e.target.value)}
-                  placeholder="Например: ОРЬ"
+                  placeholder="Например: Pori"
                   style={inputStyle}
                 />
               </span>
@@ -472,7 +462,7 @@ export default function ManagerObjectsPage() {
                   </div>
                 ) : null}
 
-                <div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button
                     type="button"
                     className={styles.btnSecondary}
@@ -480,6 +470,14 @@ export default function ManagerObjectsPage() {
                   >
                     Редактировать
                   </button>
+
+                  <Link
+                    href={`/object-map/${encodeURIComponent(item.id)}`}
+                    className={styles.actionButton}
+                    style={{ display: "inline-block", maxWidth: 220, textAlign: "center" }}
+                  >
+                    Карта объекта
+                  </Link>
                 </div>
               </div>
             ))
