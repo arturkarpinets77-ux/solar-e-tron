@@ -1,4 +1,3 @@
-// pages/worker/object/[id].js
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -154,6 +153,14 @@ export default function WorkerObjectDetailsPage() {
               >
                 Открыть в Google Maps
               </a>
+
+              <Link
+                href={`/object-map/${encodeURIComponent(objectItem.id)}`}
+                className={styles.actionButton}
+                style={{ display: "inline-block", maxWidth: 260, textAlign: "center" }}
+              >
+                Карта объекта
+              </Link>
 
               <Link
                 href="/worker/workday"
