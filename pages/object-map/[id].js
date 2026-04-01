@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import { auth, db } from "../../lib/firebaseClient";
+import { auth, db, storage } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
@@ -14,6 +14,11 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 
 import s from "../../styles/objectMap.module.css";
 
@@ -52,6 +57,9 @@ export default function ObjectMapPage() {
   const [markers, setMarkers] = useState([]);
 
   const [imageUrlInput, setImageUrlInput] = useState("");
+  const [mapFile, setMapFile] = useState(null);
+  const [uploadingMap, setUploadingMap] = useState(false);
+
   const [planPanelsInput, setPlanPanelsInput] = useState("");
   const [planConstructionsInput, setPlanConstructionsInput] = useState("");
 
@@ -173,6 +181,47 @@ export default function ObjectMapPage() {
     setPendingPos(null);
   }
 
+  async function handleUploadMapFile() {
+    if (!canEdit || !objectItem?.id) return;
+    if (!mapFile) {
+      setMsg("Сначала выбери файл схемы.");
+      return;
+    }
+
+    setUploadingMap(true);
+    setMsg("");
+
+    try {
+      const ext = String(mapFile.name.split(".").pop() || "jpg").toLowerCase();
+      const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
+
+      const fileRef = ref(
+        storage,
+        `Objects/${objectItem.id}/Map/schema.${safeExt}`
+      );
+
+      await uploadBytes(fileRef, mapFile);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      await updateDoc(doc(db, "Objects", objectItem.id), {
+        mapImageUrl: downloadUrl,
+        updatedAt: serverTimestamp(),
+      });
+
+      const refreshed = await getDoc(doc(db, "Objects", objectItem.id));
+      const nextObj = { id: refreshed.id, ...refreshed.data() };
+
+      setObjectItem(nextObj);
+      setImageUrlInput(String(nextObj.mapImageUrl || ""));
+      setMapFile(null);
+      setMsg("Схема объекта загружена.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка загрузки схемы объекта");
+    } finally {
+      setUploadingMap(false);
+    }
+  }
+
   async function handleSaveMapSettings() {
     if (!canEdit || !objectItem?.id) return;
 
@@ -214,7 +263,7 @@ export default function ObjectMapPage() {
     setMsg("");
 
     if (!editingMarkerId && !pendingPos) {
-      setMsg("Сначала кликни по схеме, чтобы выбрать место маркировки.");
+      setMsg("Сначала кликни по схеме, чтобы выбрать место для новой маркировки.");
       return;
     }
 
@@ -362,7 +411,28 @@ export default function ObjectMapPage() {
           <div className={s.settingsBox}>
             <div className={s.sectionTitle}>Настройки карты объекта</div>
 
-            <label className={s.label}>URL изображения схемы объекта</label>
+            <label className={s.label}>Загрузить файл схемы объекта</label>
+            <input
+              className={s.input}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              onChange={(e) => setMapFile(e.target.files?.[0] || null)}
+            />
+
+            <div className={s.rowButtons}>
+              <button
+                className={s.primaryBtn}
+                type="button"
+                onClick={handleUploadMapFile}
+                disabled={uploadingMap}
+              >
+                {uploadingMap ? "Загрузка..." : "Загрузить схему"}
+              </button>
+            </div>
+
+            <label className={s.label} style={{ marginTop: 14 }}>
+              Или вставь URL изображения схемы
+            </label>
             <input
               className={s.input}
               value={imageUrlInput}
