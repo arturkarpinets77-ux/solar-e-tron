@@ -1,48 +1,55 @@
-// pages/api/objects/delete.js
 import { adminDb, adminStorage } from "../../../lib/firebaseAdmin";
+
+async function deleteCollectionDocs(collectionRef) {
+  const snap = await collectionRef.get();
+  if (snap.empty) return;
+
+  const batch = adminDb.batch();
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const { objectId } = req.body;
-
-  if (!objectId) {
-    return res.status(400).json({ error: "No objectId" });
+    return res.status(405).json({ error: "Only POST allowed" });
   }
 
   try {
-    // 🔥 Удаляем фото (Firestore)
-    const photosSnap = await adminDb
-      .collection("Objects")
-      .doc(objectId)
-      .collection("Photos")
-      .get();
+    const { objectId } = req.body || {};
 
-    const batch = adminDb.batch();
+    if (!objectId) {
+      return res.status(400).json({ error: "objectId is required" });
+    }
 
-    photosSnap.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
+    const objectRef = adminDb.collection("Objects").doc(String(objectId));
 
-    await batch.commit();
+    const objectSnap = await objectRef.get();
+    if (!objectSnap.exists) {
+      return res.status(404).json({ error: "Object not found" });
+    }
 
-    // 🔥 Удаляем файлы из Storage
+    await deleteCollectionDocs(objectRef.collection("Photos"));
+    await deleteCollectionDocs(objectRef.collection("MapMarkers"));
+    await deleteCollectionDocs(objectRef.collection("Markings"));
+
     const bucket = adminStorage.bucket();
     const prefix = `Objects/${objectId}/`;
 
     const [files] = await bucket.getFiles({ prefix });
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          await file.delete();
+        } catch (_) {}
+      })
+    );
 
-    for (const file of files) {
-      await file.delete().catch(() => {});
-    }
+    await objectRef.delete();
 
-    // 🔥 Удаляем сам объект
-    await adminDb.collection("Objects").doc(objectId).delete();
-
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({
+      error: e?.message || "Delete failed",
+    });
   }
 }
