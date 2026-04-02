@@ -200,43 +200,45 @@ export default function ManagerObjectsPage() {
   }
 
   async function handleDelete(objectId) {
-    const confirmDelete = window.confirm(
-      `Удалить объект "${objectId}" полностью?\n\nБудут удалены:\n- сам объект\n- фото объекта\n- маркировки карты\n- файлы объекта в Storage`
-    );
+  const confirmDelete = window.confirm(
+    `Удалить объект "${objectId}" полностью?\n\nБудут удалены:\n- сам объект\n- фото объекта\n- маркировки карты\n- файлы объекта в Storage`
+  );
 
-    if (!confirmDelete) return;
+  if (!confirmDelete) return;
 
-    setDeletingId(objectId);
-    setMsg("Удаление объекта...");
+  setDeletingId(objectId);
+  setMsg("Удаление объекта...");
 
-    try {
-      const res = await fetch("/api/objects/delete", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ objectId }),
-      });
+  try {
+    const res = await fetch("/api/objects/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ objectId }),
+    });
 
-      const data = await res.json();
+    const contentType = res.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await res.json()
+      : { error: await res.text() };
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Ошибка удаления объекта");
-      }
-
-      if (editingId === objectId) {
-        resetForm();
-      }
-
-      setMsg("Объект удалён.");
-      await loadObjects();
-    } catch (e) {
-      setMsg(e?.message || "Ошибка удаления объекта");
-    } finally {
-      setDeletingId("");
+    if (!res.ok) {
+      throw new Error(data?.error || "Ошибка удаления объекта");
     }
-  }
 
+    if (editingId === objectId) {
+      resetForm();
+    }
+
+    setMsg("Объект удалён.");
+    await loadObjects();
+  } catch (e) {
+    setMsg(e?.message || "Ошибка удаления объекта");
+  } finally {
+    setDeletingId("");
+  }
+}
   function handleEdit(item) {
     setEditingId(item.id);
     setObjectName(String(item.name || ""));
