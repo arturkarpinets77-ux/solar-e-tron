@@ -1,12 +1,15 @@
-import { adminDb, adminStorage } from "../../../lib/firebaseAdmin";
+import { getAdminServices } from "../../../lib/firebaseAdmin";
 
 async function deleteCollectionDocs(collectionRef) {
   const snap = await collectionRef.get();
   if (snap.empty) return;
 
-  const batch = adminDb.batch();
-  snap.docs.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = collectionRef.firestore.batch();
+    docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
 }
 
 export default async function handler(req, res) {
@@ -21,6 +24,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "objectId is required" });
     }
 
+    const { adminDb, bucket } = getAdminServices();
+
     const objectRef = adminDb.collection("Objects").doc(String(objectId));
     const objectSnap = await objectRef.get();
 
@@ -32,10 +37,9 @@ export default async function handler(req, res) {
     await deleteCollectionDocs(objectRef.collection("MapMarkers"));
     await deleteCollectionDocs(objectRef.collection("Markings"));
 
-    const bucket = adminStorage.bucket();
     const prefix = `Objects/${objectId}/`;
-
     const [files] = await bucket.getFiles({ prefix });
+
     await Promise.all(
       files.map(async (file) => {
         try {
