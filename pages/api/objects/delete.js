@@ -1,55 +1,22 @@
-import { adminDb, adminStorage } from "../../../lib/firebaseAdmin";
-
-async function deleteCollectionDocs(collectionRef) {
-  const snap = await collectionRef.get();
-  if (snap.empty) return;
-
-  const batch = adminDb.batch();
-  snap.docs.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
-}
+import { doc, deleteDoc } from "firebase/firestore";
+import { db } from "@/lib/firebaseClient";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Only POST allowed" });
+    return res.status(405).json({ error: "Метод не разрешён" });
   }
 
   try {
-    const { objectId } = req.body || {};
+    const { objectId } = req.body;
 
     if (!objectId) {
-      return res.status(400).json({ error: "objectId is required" });
+      return res.status(400).json({ error: "Нет objectId" });
     }
 
-    const objectRef = adminDb.collection("Objects").doc(String(objectId));
+    await deleteDoc(doc(db, "Objects", objectId));
 
-    const objectSnap = await objectRef.get();
-    if (!objectSnap.exists) {
-      return res.status(404).json({ error: "Object not found" });
-    }
-
-    await deleteCollectionDocs(objectRef.collection("Photos"));
-    await deleteCollectionDocs(objectRef.collection("MapMarkers"));
-    await deleteCollectionDocs(objectRef.collection("Markings"));
-
-    const bucket = adminStorage.bucket();
-    const prefix = `Objects/${objectId}/`;
-
-    const [files] = await bucket.getFiles({ prefix });
-    await Promise.all(
-      files.map(async (file) => {
-        try {
-          await file.delete();
-        } catch (_) {}
-      })
-    );
-
-    await objectRef.delete();
-
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ success: true });
   } catch (e) {
-    return res.status(500).json({
-      error: e?.message || "Delete failed",
-    });
+    return res.status(500).json({ error: e.message });
   }
 }
