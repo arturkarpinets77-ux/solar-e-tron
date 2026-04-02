@@ -47,6 +47,7 @@ export default function ManagerObjectsPage() {
 
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
 
   const [showMap, setShowMap] = useState(false);
   const [mapLat, setMapLat] = useState(60.1699);
@@ -119,7 +120,7 @@ export default function ManagerObjectsPage() {
       .sort((a, b) => {
         const aName = `${a.firstName || ""} ${a.lastName || ""}`.trim();
         const bName = `${b.firstName || ""} ${b.lastName || ""}`.trim();
-        return aName.localeCompare(bName);
+        return aName.localeCompare(bName, "ru");
       });
 
     setWorkers(list);
@@ -195,6 +196,44 @@ export default function ManagerObjectsPage() {
       setMsg(e2?.message || "Ошибка сохранения объекта");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(objectId) {
+    const confirmDelete = window.confirm(
+      `Удалить объект "${objectId}" полностью?\n\nБудут удалены:\n- сам объект\n- фото объекта\n- маркировки карты\n- файлы объекта в Storage`
+    );
+
+    if (!confirmDelete) return;
+
+    setDeletingId(objectId);
+    setMsg("Удаление объекта...");
+
+    try {
+      const res = await fetch("/api/objects/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ objectId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Ошибка удаления объекта");
+      }
+
+      if (editingId === objectId) {
+        resetForm();
+      }
+
+      setMsg("Объект удалён.");
+      await loadObjects();
+    } catch (e) {
+      setMsg(e?.message || "Ошибка удаления объекта");
+    } finally {
+      setDeletingId("");
     }
   }
 
@@ -478,6 +517,23 @@ export default function ManagerObjectsPage() {
                   >
                     Карта объекта
                   </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item.id)}
+                    disabled={deletingId === item.id}
+                    style={{
+                      border: "none",
+                      borderRadius: 12,
+                      padding: "10px 14px",
+                      background: deletingId === item.id ? "#d9a9a9" : "#c94141",
+                      color: "#fff",
+                      fontWeight: 700,
+                      cursor: deletingId === item.id ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {deletingId === item.id ? "Удаление..." : "Удалить объект"}
+                  </button>
                 </div>
               </div>
             ))
