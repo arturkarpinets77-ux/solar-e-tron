@@ -10,8 +10,8 @@ import {
   doc,
   getDoc,
   getDocs,
-  orderBy,
   query,
+  where,
 } from "firebase/firestore";
 
 import styles from "../../styles/worker.module.css";
@@ -67,16 +67,47 @@ export default function WorkerObjectsPage() {
           return;
         }
 
-        const q = query(collection(db, "Objects"), orderBy("name"));
-        const snap = await getDocs(q);
+        // Запрашиваем только те объекты, которые работнику разрешено читать
+        const activeQ = query(
+          collection(db, "Objects"),
+          where("status", "==", "active")
+        );
 
-        const list = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((item) => visibleForWorker(item, user.uid));
+        const reworkQ = query(
+          collection(db, "Objects"),
+          where("status", "==", "rework"),
+          where("visibleToWorkerUids", "array-contains", user.uid)
+        );
+
+        const [activeSnap, reworkSnap] = await Promise.all([
+          getDocs(activeQ),
+          getDocs(reworkQ),
+        ]);
+
+        const map = new Map();
+
+        activeSnap.docs.forEach((d) => {
+          map.set(d.id, { id: d.id, ...d.data() });
+        });
+
+        reworkSnap.docs.forEach((d) => {
+          map.set(d.id, { id: d.id, ...d.data() });
+        });
+
+        const list = Array.from(map.values())
+          .filter((item) => visibleForWorker(item, user.uid))
+          .sort((a, b) =>
+            String(a?.name || a?.id || "").localeCompare(
+              String(b?.name || b?.id || ""),
+              "ru"
+            )
+          );
 
         setObjects(list);
       } catch (e) {
+        console.error("Ошибка загрузки объектов работника:", e);
         setMsg(e?.message || "Ошибка загрузки объектов");
+        setObjects([]);
       } finally {
         setLoading(false);
       }
