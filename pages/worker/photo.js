@@ -11,6 +11,7 @@ import {
   getDoc,
   getDocs,
   query,
+  where,
   orderBy,
   limit,
   setDoc,
@@ -36,6 +37,21 @@ function safeFileName(name) {
     .slice(0, 120);
 }
 
+function visibleForWorker(objectItem, uid) {
+  const status = String(objectItem?.status || "").toLowerCase();
+
+  if (status === "active") return true;
+  if (status === "inactive") return false;
+
+  if (status === "rework") {
+    return Array.isArray(objectItem?.visibleToWorkerUids)
+      ? objectItem.visibleToWorkerUids.includes(uid)
+      : false;
+  }
+
+  return false;
+}
+
 export default function WorkerPhotoPage() {
   const router = useRouter();
 
@@ -59,30 +75,51 @@ export default function WorkerPhotoPage() {
   async function loadObjects(currentUid) {
     if (!db || !currentUid) return;
 
-    const q = query(collection(db, "Objects"));
-    const snap = await getDocs(q);
+    const activeQ = query(
+      collection(db, "Objects"),
+      where("status", "==", "active")
+    );
 
-    const list = snap.docs
-      .map((d) => {
-        const data = d.data() || {};
-        return {
-          id: d.id,
-          name: String(data.name || d.id),
-          status: String(data.status || "active").toLowerCase(),
-          visibleToWorkerUids: Array.isArray(data.visibleToWorkerUids)
-            ? data.visibleToWorkerUids
-            : [],
-        };
-      })
-      .filter((obj) => {
-        if (obj.status === "active") return true;
-        if (obj.status === "inactive") return false;
-        if (obj.status === "rework") {
-          return obj.visibleToWorkerUids.includes(currentUid);
-        }
-        return false;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const reworkQ = query(
+      collection(db, "Objects"),
+      where("status", "==", "rework"),
+      where("visibleToWorkerUids", "array-contains", currentUid)
+    );
+
+    const [activeSnap, reworkSnap] = await Promise.all([
+      getDocs(activeQ),
+      getDocs(reworkQ),
+    ]);
+
+    const map = new Map();
+
+    activeSnap.docs.forEach((d) => {
+      const data = d.data() || {};
+      map.set(d.id, {
+        id: d.id,
+        name: String(data.name || d.id),
+        status: String(data.status || "active").toLowerCase(),
+        visibleToWorkerUids: Array.isArray(data.visibleToWorkerUids)
+          ? data.visibleToWorkerUids
+          : [],
+      });
+    });
+
+    reworkSnap.docs.forEach((d) => {
+      const data = d.data() || {};
+      map.set(d.id, {
+        id: d.id,
+        name: String(data.name || d.id),
+        status: String(data.status || "active").toLowerCase(),
+        visibleToWorkerUids: Array.isArray(data.visibleToWorkerUids)
+          ? data.visibleToWorkerUids
+          : [],
+      });
+    });
+
+    const list = Array.from(map.values())
+      .filter((obj) => visibleForWorker(obj, currentUid))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
     setObjects(list);
   }
@@ -218,7 +255,6 @@ export default function WorkerPhotoPage() {
         const photoId = photoRef.id;
         const fileName = safeFileName(file.name);
 
-        // Storage: Objects/{objectKey}/Photos/{photoId}/{fileName}
         const storagePath = `Objects/${objectId}/Photos/${photoId}/${fileName}`;
         const storageRef = ref(storage, storagePath);
 
@@ -228,7 +264,6 @@ export default function WorkerPhotoPage() {
 
         const url = await getDownloadURL(storageRef);
 
-        // Firestore metadata: Objects/{objectKey}/Photos/{photoId}
         await setDoc(photoRef, {
           objectId,
           objectName: getSelectedObjectName(),
@@ -399,7 +434,6 @@ export default function WorkerPhotoPage() {
                 }}
               >
                 {p.url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={p.url}
                     alt={p.fileName || "photo"}
