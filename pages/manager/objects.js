@@ -45,6 +45,10 @@ export default function ManagerObjectsPage() {
   const [objectStatus, setObjectStatus] = useState("active");
   const [selectedWorkers, setSelectedWorkers] = useState([]);
 
+  const [constructionStartNumber, setConstructionStartNumber] = useState("");
+  const [constructionEndNumber, setConstructionEndNumber] = useState("");
+  const [panelsPerConstruction, setPanelsPerConstruction] = useState("");
+
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
@@ -132,6 +136,10 @@ export default function ManagerObjectsPage() {
     setSelectedWorkers([]);
     setEditingId(null);
 
+    setConstructionStartNumber("");
+    setConstructionEndNumber("");
+    setPanelsPerConstruction("");
+
     setMapLat(60.1699);
     setMapLng(24.9384);
     setRadiusMeters(500);
@@ -151,6 +159,13 @@ export default function ManagerObjectsPage() {
     const name = objectName.trim();
     const objectKey = normalizeObjectKey(name);
 
+    const startNum =
+      constructionStartNumber === "" ? null : Number(constructionStartNumber);
+    const endNum =
+      constructionEndNumber === "" ? null : Number(constructionEndNumber);
+    const panelsPerConstr =
+      panelsPerConstruction === "" ? 0 : Number(panelsPerConstruction);
+
     if (!name) {
       setMsg("Укажи название объекта.");
       return;
@@ -166,6 +181,31 @@ export default function ManagerObjectsPage() {
       return;
     }
 
+    const hasConstructionRange =
+      startNum !== null || endNum !== null || panelsPerConstr > 0;
+
+    if (hasConstructionRange) {
+      if (
+        startNum === null ||
+        endNum === null ||
+        !Number.isFinite(startNum) ||
+        !Number.isFinite(endNum)
+      ) {
+        setMsg("Для карты конструкций укажи и начальный, и конечный номер.");
+        return;
+      }
+
+      if (startNum < 1 || endNum < 1 || endNum < startNum) {
+        setMsg("Диапазон конструкций заполнен неверно.");
+        return;
+      }
+
+      if (panelsPerConstr < 0) {
+        setMsg("Панелей на конструкцию не может быть меньше нуля.");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -177,6 +217,9 @@ export default function ManagerObjectsPage() {
           lng: Number(mapLng),
           radiusMeters: Number(radiusMeters || 0),
         },
+        constructionStartNumber: startNum,
+        constructionEndNumber: endNum,
+        panelsPerConstruction: panelsPerConstr,
         updatedAt: serverTimestamp(),
       };
 
@@ -200,51 +243,71 @@ export default function ManagerObjectsPage() {
   }
 
   async function handleDelete(objectId) {
-  const confirmDelete = window.confirm(
-    `Удалить объект "${objectId}" полностью?\n\nБудут удалены:\n- сам объект\n- фото объекта\n- маркировки карты\n- файлы объекта в Storage`
-  );
+    const confirmDelete = window.confirm(
+      `Удалить объект "${objectId}" полностью?\n\nБудут удалены:\n- сам объект\n- фото объекта\n- маркировки карты\n- файлы объекта в Storage`
+    );
 
-  if (!confirmDelete) return;
+    if (!confirmDelete) return;
 
-  setDeletingId(objectId);
-  setMsg("Удаление объекта...");
+    setDeletingId(objectId);
+    setMsg("Удаление объекта...");
 
-  try {
-    const res = await fetch("/api/objects/delete", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ objectId }),
-    });
+    try {
+      const res = await fetch("/api/objects/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ objectId }),
+      });
 
-    const contentType = res.headers.get("content-type") || "";
-    const data = contentType.includes("application/json")
-      ? await res.json()
-      : { error: await res.text() };
+      const contentType = res.headers.get("content-type") || "";
+      const data = contentType.includes("application/json")
+        ? await res.json()
+        : { error: await res.text() };
 
-    if (!res.ok) {
-      throw new Error(data?.error || "Ошибка удаления объекта");
+      if (!res.ok) {
+        throw new Error(data?.error || "Ошибка удаления объекта");
+      }
+
+      if (editingId === objectId) {
+        resetForm();
+      }
+
+      setMsg("Объект удалён.");
+      await loadObjects();
+    } catch (e) {
+      setMsg(e?.message || "Ошибка удаления объекта");
+    } finally {
+      setDeletingId("");
     }
-
-    if (editingId === objectId) {
-      resetForm();
-    }
-
-    setMsg("Объект удалён.");
-    await loadObjects();
-  } catch (e) {
-    setMsg(e?.message || "Ошибка удаления объекта");
-  } finally {
-    setDeletingId("");
   }
-}
+
   function handleEdit(item) {
     setEditingId(item.id);
     setObjectName(String(item.name || ""));
     setObjectStatus(String(item.status || "active"));
     setSelectedWorkers(
       Array.isArray(item.visibleToWorkerUids) ? item.visibleToWorkerUids : []
+    );
+
+    setConstructionStartNumber(
+      item?.constructionStartNumber !== null &&
+        item?.constructionStartNumber !== undefined
+        ? String(item.constructionStartNumber)
+        : ""
+    );
+    setConstructionEndNumber(
+      item?.constructionEndNumber !== null &&
+        item?.constructionEndNumber !== undefined
+        ? String(item.constructionEndNumber)
+        : ""
+    );
+    setPanelsPerConstruction(
+      item?.panelsPerConstruction !== null &&
+        item?.panelsPerConstruction !== undefined
+        ? String(item.panelsPerConstruction)
+        : ""
     );
 
     setMapLat(Number(item?.geo?.lat || 60.1699));
@@ -260,6 +323,22 @@ export default function ManagerObjectsPage() {
     if (status === "inactive") return "Неактивный";
     if (status === "rework") return "Доработка";
     return status || "-";
+  }
+
+  function constructionRangeLabel(item) {
+    const start = item?.constructionStartNumber;
+    const end = item?.constructionEndNumber;
+
+    if (
+      start === null ||
+      start === undefined ||
+      end === null ||
+      end === undefined
+    ) {
+      return "-";
+    }
+
+    return `${start} – ${end}`;
   }
 
   if (loading) {
@@ -309,6 +388,73 @@ export default function ManagerObjectsPage() {
                   <option value="rework">Доработка</option>
                 </select>
               </span>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid rgba(120, 90, 20, 0.16)",
+                background: "rgba(255, 252, 240, 0.70)",
+              }}
+            >
+              <div style={{ fontWeight: 800 }}>Настройки карты конструкций</div>
+
+              <div style={twoColStyle}>
+                <div>
+                  <label style={smallLabelStyle}>Начальный номер конструкции</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={constructionStartNumber}
+                    onChange={(e) => setConstructionStartNumber(e.target.value)}
+                    placeholder="Например: 1"
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={smallLabelStyle}>Конечный номер конструкции</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={constructionEndNumber}
+                    onChange={(e) => setConstructionEndNumber(e.target.value)}
+                    placeholder="Например: 96"
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div style={twoColStyle}>
+                <div>
+                  <label style={smallLabelStyle}>Панелей на конструкцию</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={panelsPerConstruction}
+                    onChange={(e) => setPanelsPerConstruction(e.target.value)}
+                    placeholder="Например: 56"
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    alignSelf: "end",
+                    opacity: 0.75,
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Эти данные будут использоваться внутри страницы
+                  <b> “Карта объекта” </b>
+                  для блока
+                  <b> “Карта конструкций”</b>.
+                </div>
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -475,9 +621,11 @@ export default function ManagerObjectsPage() {
                 }}
               >
                 <div style={{ fontWeight: 800 }}>{item.name || item.id}</div>
+
                 <div>
                   <b>Ключ:</b> {item.id}
                 </div>
+
                 <div>
                   <b>Статус:</b> {statusLabel(item.status)}
                 </div>
@@ -491,6 +639,14 @@ export default function ManagerObjectsPage() {
 
                 <div>
                   <b>Радиус:</b> {item?.geo?.radiusMeters || 0} м
+                </div>
+
+                <div>
+                  <b>Диапазон конструкций:</b> {constructionRangeLabel(item)}
+                </div>
+
+                <div>
+                  <b>Панелей на конструкцию:</b> {item?.panelsPerConstruction || 0}
                 </div>
 
                 {item.status === "rework" ? (
@@ -515,7 +671,11 @@ export default function ManagerObjectsPage() {
                   <Link
                     href={`/object-map/${encodeURIComponent(item.id)}`}
                     className={styles.actionButton}
-                    style={{ display: "inline-block", maxWidth: 220, textAlign: "center" }}
+                    style={{
+                      display: "inline-block",
+                      maxWidth: 220,
+                      textAlign: "center",
+                    }}
                   >
                     Карта объекта
                   </Link>
@@ -559,4 +719,17 @@ const inputStyle = {
   border: "1px solid rgba(120, 90, 20, 0.16)",
   background: "rgba(255,255,255,0.92)",
   outline: "none",
+};
+
+const twoColStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+};
+
+const smallLabelStyle = {
+  display: "block",
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 700,
 };
