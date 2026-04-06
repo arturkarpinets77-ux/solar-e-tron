@@ -278,7 +278,7 @@ export default function WorkerConstructionReportsPage() {
         setReportMode("personal");
         setSelectedBrigadeId("");
       }
-    } catch (e) {
+    } catch {
       setBrigades([]);
     }
   }
@@ -388,8 +388,10 @@ export default function WorkerConstructionReportsPage() {
     try {
       const batch = writeBatch(db);
       const reportRef = doc(collection(db, "ConstructionReports"));
+      const reportId = reportRef.id;
 
-      batch.set(reportRef, {
+      const reportPayload = {
+        reportId,
         objectId: selectedObject.id,
         objectName: String(selectedObject.name || selectedObject.id),
         reportMode,
@@ -408,7 +410,9 @@ export default function WorkerConstructionReportsPage() {
         customCategoryIds: selectedCustomCategoryIds,
         comment: String(comment || "").trim(),
         createdAt: serverTimestamp(),
-      });
+      };
+
+      batch.set(reportRef, reportPayload);
 
       selectedConstructionNumbers.forEach((num) => {
         const ref = doc(
@@ -429,7 +433,7 @@ export default function WorkerConstructionReportsPage() {
             updatedAt: serverTimestamp(),
             updatedBy: profile.uid,
             updatedByName: profile.displayName,
-            lastReportId: reportRef.id,
+            lastReportId: reportId,
             lastReportMode: reportMode,
             lastBrigadeId: reportMode === "brigade" ? selectedBrigadeId : null,
             lastBrigadeName:
@@ -437,6 +441,16 @@ export default function WorkerConstructionReportsPage() {
           },
           { merge: true }
         );
+      });
+
+      const mirrorTargets =
+        reportMode === "brigade" && Array.isArray(selectedBrigade?.memberUids)
+          ? selectedBrigade.memberUids
+          : [profile.uid];
+
+      mirrorTargets.forEach((uid) => {
+        const mirrorRef = doc(db, "Users", uid, "ConstructionReports", reportId);
+        batch.set(mirrorRef, reportPayload, { merge: true });
       });
 
       await batch.commit();
