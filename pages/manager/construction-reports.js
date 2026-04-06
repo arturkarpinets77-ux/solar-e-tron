@@ -6,9 +6,11 @@ import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
+  writeBatch,
 } from "firebase/firestore";
 
 import styles from "../../styles/manager.module.css";
@@ -32,16 +34,43 @@ function formatDateTime(value) {
   }
 }
 
+function modeLabel(mode) {
+  return String(mode || "") === "brigade" ? "Бригадный" : "Личный";
+}
+
+function normalizeUidList(report) {
+  const set = new Set();
+
+  if (Array.isArray(report?.mirrorUids)) {
+    report.mirrorUids.forEach((uid) => {
+      if (uid) set.add(String(uid));
+    });
+  }
+
+  if (Array.isArray(report?.brigadeMemberUids)) {
+    report.brigadeMemberUids.forEach((uid) => {
+      if (uid) set.add(String(uid));
+    });
+  }
+
+  if (report?.authorUid) set.add(String(report.authorUid));
+  if (report?.workerUid) set.add(String(report.workerUid));
+
+  return Array.from(set);
+}
+
 export default function ManagerConstructionReportsPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [reports, setReports] = useState([]);
+  const [deletingId, setDeletingId] = useState("");
 
   const [modeFilter, setModeFilter] = useState("all");
   const [objectFilter, setObjectFilter] = useState("");
   const [authorFilter, setAuthorFilter] = useState("");
+  const [brigadeFilter, setBrigadeFilter] = useState("");
 
   const objectOptions = useMemo(() => {
     const map = new Map();
@@ -63,6 +92,16 @@ export default function ManagerConstructionReportsPage() {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [reports]);
 
+  const brigadeOptions = useMemo(() => {
+    const map = new Map();
+    reports.forEach((item) => {
+      const brigadeId = String(item.brigadeId || "");
+      const brigadeName = String(item.brigadeName || item.brigadeId || "");
+      if (brigadeId) map.set(brigadeId, brigadeName);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
     return reports.filter((item) => {
       if (modeFilter !== "all" && String(item.reportMode || "") !== modeFilter) {
@@ -77,9 +116,13 @@ export default function ManagerConstructionReportsPage() {
         return false;
       }
 
+      if (brigadeFilter && String(item.brigadeId || "") !== brigadeFilter) {
+        return false;
+      }
+
       return true;
     });
-  }, [reports, modeFilter, objectFilter, authorFilter]);
+  }, [reports, modeFilter, objectFilter, authorFilter, brigadeFilter]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -143,8 +186,35 @@ export default function ManagerConstructionReportsPage() {
     setReports(list);
   }
 
-  function modeLabel(mode) {
-    return String(mode || "") === "brigade" ? "Бригадный" : "Личный";
+  async function handleDeleteReport(report) {
+    const yes = window.confirm(
+      `Удалить отчёт по объекту "${report.objectName || report.objectId || "-"}"?`
+    );
+    if (!yes) return;
+
+    setDeletingId(report.id);
+    setMsg("");
+
+    try {
+      const batch = writeBatch(db);
+
+      batch.delete(doc(db, "ConstructionReports", report.id));
+
+      const mirrorUids = normalizeUidList(report);
+
+      mirrorUids.forEach((uid) => {
+        batch.delete(doc(db, "Users", uid, "ConstructionReports", report.id));
+      });
+
+      await batch.commit();
+
+      setMsg("Отчёт удалён.");
+      await loadReports();
+    } catch (e) {
+      setMsg(e?.message || "Ошибка удаления отчёта");
+    } finally {
+      setDeletingId("");
+    }
   }
 
   if (loading) {
@@ -215,6 +285,22 @@ export default function ManagerConstructionReportsPage() {
                 ))}
               </select>
             </div>
+
+            <div>
+              <div style={labelStyle}>Бригада</div>
+              <select
+                value={brigadeFilter}
+                onChange={(e) => setBrigadeFilter(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">Все бригады</option>
+                {brigadeOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -277,6 +363,10 @@ export default function ManagerConstructionReportsPage() {
                   <div>
                     <b>Дата:</b> {formatDateTime(item.createdAt)}
                   </div>
+
+                  <div>
+                    <b>ID отчёта:</b> {item.reportId || item.id}
+                  </div>
                 </div>
 
                 {Array.isArray(item.customCategoryIds) &&
@@ -291,6 +381,25 @@ export default function ManagerConstructionReportsPage() {
                     <b>Комментарий:</b> {item.comment}
                   </div>
                 ) : null}
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReport(item)}
+                    disabled={deletingId === item.id}
+                    style={{
+                      border: "none",
+                      borderRadius: 12,
+                      padding: "10px 14px",
+                      background: deletingId === item.id ? "#d9a9a9" : "#c94141",
+                      color: "#fff",
+                      fontWeight: 700,
+                      cursor: deletingId === item.id ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {deletingId === item.id ? "Удаление..." : "Удалить отчёт"}
+                  </button>
+                </div>
               </div>
             ))
           )}
