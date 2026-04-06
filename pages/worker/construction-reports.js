@@ -11,7 +11,6 @@ import {
   getDocs,
   query,
   serverTimestamp,
-  setDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -190,7 +189,10 @@ export default function WorkerConstructionReportsPage() {
 
         setProfile(nextProfile);
 
-        await Promise.all([loadObjectsForWorker(user.uid), loadBrigades(user.uid)]);
+        await Promise.all([
+          loadObjectsForWorker(user.uid),
+          loadBrigades(user.uid),
+        ]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки страницы отчётов");
       } finally {
@@ -213,60 +215,71 @@ export default function WorkerConstructionReportsPage() {
   }, [selectedObjectId]);
 
   async function loadObjectsForWorker(workerUid) {
-    const activeSnap = await getDocs(
-      query(collection(db, "Objects"), where("status", "==", "active"))
-    );
+    try {
+      const activeSnap = await getDocs(
+        query(collection(db, "Objects"), where("status", "==", "active"))
+      );
 
-    const reworkSnap = await getDocs(
-      query(
-        collection(db, "Objects"),
-        where("visibleToWorkerUids", "array-contains", workerUid)
-      )
-    );
+      const reworkSnap = await getDocs(
+        query(
+          collection(db, "Objects"),
+          where("status", "==", "rework"),
+          where("visibleToWorkerUids", "array-contains", workerUid)
+        )
+      );
 
-    const activeList = activeSnap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-
-    const reworkList = reworkSnap.docs
-      .map((d) => ({
+      const activeList = activeSnap.docs.map((d) => ({
         id: d.id,
         ...d.data(),
-      }))
-      .filter((item) => String(item.status || "").toLowerCase() === "rework");
+      }));
 
-    const uniqueMap = new Map();
+      const reworkList = reworkSnap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
 
-    [...activeList, ...reworkList].forEach((item) => {
-      uniqueMap.set(item.id, item);
-    });
+      const uniqueMap = new Map();
+      [...activeList, ...reworkList].forEach((item) => {
+        uniqueMap.set(item.id, item);
+      });
 
-    const list = Array.from(uniqueMap.values()).sort((a, b) =>
-      String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
-    );
+      const list = Array.from(uniqueMap.values()).sort((a, b) =>
+        String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
+      );
 
-    setObjects(list);
+      setObjects(list);
+
+      if (list.length === 1) {
+        setSelectedObjectId(list[0].id);
+      }
+    } catch (e) {
+      setObjects([]);
+      setMsg(e?.message || "Ошибка загрузки объектов");
+    }
   }
 
   async function loadBrigades(uid) {
-    const q = query(
-      collection(db, "Brigades"),
-      where("memberUids", "array-contains", uid)
-    );
-    const snap = await getDocs(q);
-
-    const list = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) =>
-        String(a.name || "").localeCompare(String(b.name || ""), "ru")
+    try {
+      const q = query(
+        collection(db, "Brigades"),
+        where("memberUids", "array-contains", uid)
       );
+      const snap = await getDocs(q);
 
-    setBrigades(list);
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) =>
+          String(a.name || "").localeCompare(String(b.name || ""), "ru")
+        );
 
-    if (list.length === 0) {
-      setReportMode("personal");
-      setSelectedBrigadeId("");
+      setBrigades(list);
+
+      if (list.length === 0) {
+        setReportMode("personal");
+        setSelectedBrigadeId("");
+      }
+    } catch (e) {
+      setBrigades([]);
     }
   }
 
@@ -519,6 +532,12 @@ export default function WorkerConstructionReportsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            ) : null}
+
+            {objects.length === 0 ? (
+              <div style={{ marginTop: 12, opacity: 0.8 }}>
+                Нет доступных объектов для отчёта.
               </div>
             ) : null}
           </div>
