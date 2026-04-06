@@ -7,51 +7,60 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   doc,
   getDoc,
+  serverTimestamp,
   setDoc,
   updateDoc,
-  serverTimestamp,
 } from "firebase/firestore";
 
 import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
 
+function getTodayKey() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getNowTime() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
 function roleLabel(role) {
   const value = String(role || "").toLowerCase();
-
-  if (value === "worker") return "Работник";
-  if (value === "accountant") return "Бухгалтер";
-  if (value === "director") return "Директор";
   if (value === "admin") return "Администратор";
-
+  if (value === "director") return "Директор";
   return role || "-";
 }
 
-function dateKeyLocalYYYYMMDD() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+function dayStatusLabel(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "started") return "В работе";
+  if (value === "ended") return "Завершён";
+  return "Не начат";
 }
 
-export default function ManagerDashboardPage() {
+export default function ManagerIndexPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
-  const [profile, setProfile] = useState(null);
-  const [dayDoc, setDayDoc] = useState(null);
 
-  const dateKey = useMemo(() => dateKeyLocalYYYYMMDD(), []);
-  const dayRef = useMemo(() => {
-    if (!db || !profile?.uid) return null;
-    return doc(db, "Users", profile.uid, "Workdays", dateKey);
-  }, [profile?.uid, dateKey]);
+  const [profile, setProfile] = useState(null);
+  const [todayWorkday, setTodayWorkday] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const todayKey = useMemo(() => getTodayKey(), []);
 
   useEffect(() => {
     if (!auth || !db) return;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
+      setLoading(true);
       setMsg("");
 
       if (!user) {
@@ -60,16 +69,18 @@ export default function ManagerDashboardPage() {
       }
 
       try {
-        const snap = await getDoc(doc(db, "Users", user.uid));
-        if (!snap.exists()) {
+        const userRef = doc(db, "Users", user.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
           await signOut(auth);
           router.replace("/login");
           return;
         }
 
-        const data = snap.data() || {};
-        const role = String(data.role || "").trim().toLowerCase();
-        const status = String(data.status || "").trim().toLowerCase();
+        const data = userSnap.data() || {};
+        const role = String(data.role || "").toLowerCase();
+        const status = String(data.status || "").toLowerCase();
 
         if (status !== "active") {
           router.replace("/dashboard");
@@ -81,138 +92,95 @@ export default function ManagerDashboardPage() {
           return;
         }
 
-        const nextProfile = {
+        setProfile({
           uid: user.uid,
-          email: String(data.email || user.email || "").trim(),
-          personalNumber: String(data.personalNumber || "").trim(),
+          firstName: String(data.firstName || ""),
+          lastName: String(data.lastName || ""),
+          email: String(data.email || user.email || ""),
+          personalNumber: String(data.personalNumber || ""),
           role,
           status,
-          firstName:
-            String(data.firstName || "").trim() ||
-            String(data.name || "").trim() ||
-            "",
-          lastName:
-            String(data.lastName || "").trim() ||
-            String(data.surname || "").trim() ||
-            "",
-        };
+        });
 
-        setProfile(nextProfile);
-
-        const wdSnap = await getDoc(doc(db, "Users", user.uid, "Workdays", dateKey));
-        setDayDoc(wdSnap.exists() ? wdSnap.data() : null);
+        await loadTodayWorkday(user.uid, todayKey);
       } catch (e) {
-        setMsg(e?.message || "Ошибка загрузки кабинета");
+        setMsg(e?.message || "Ошибка загрузки кабинета директора");
       } finally {
         setLoading(false);
       }
     });
 
     return () => unsub();
-  }, [router, dateKey]);
+  }, [router, todayKey]);
 
-  async function refreshDay(uid) {
-    if (!db || !uid) return;
-    const wdSnap = await getDoc(doc(db, "Users", uid, "Workdays", dateKey));
-    setDayDoc(wdSnap.exists() ? wdSnap.data() : null);
-  }
+  async function loadTodayWorkday(uid, dateKey) {
+    const ref = doc(db, "Users", uid, "Workdays", dateKey);
+    const snap = await getDoc(ref);
 
-  async function handleLogout() {
-    try {
-      await signOut(auth);
-      router.replace("/");
-    } catch (e) {
-      setMsg(e?.message || "Ошибка выхода");
+    if (!snap.exists()) {
+      setTodayWorkday(null);
+      return;
     }
+
+    setTodayWorkday({ id: snap.id, ...snap.data() });
   }
 
-  const started = !!dayDoc?.startAt;
-  const ended = !!dayDoc?.endAt;
+  async function handleStartDay() {
+    if (!profile?.uid) return;
 
-  const canStartDay = !started && !ended;
-  const canEndDay = started && !ended;
-
-  async function startDay() {
+    setSaving(true);
     setMsg("");
-    if (!profile?.uid || !db) return;
 
     try {
-      const ref = doc(db, "Users", profile.uid, "Workdays", dateKey);
-      const snap = await getDoc(ref);
+      const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
-      if (snap.exists()) {
-        const data = snap.data() || {};
-        if (data.startAt) {
-          setMsg("Рабочий день уже начат.");
-          return;
-        }
-
-        await updateDoc(ref, {
-          dateKey,
-          startAt: serverTimestamp(),
-          endAt: null,
-          breakStartAt: null,
-          breakEndAt: null,
+      await setDoc(
+        ref,
+        {
+          date: todayKey,
           status: "started",
+          startTime: getNowTime(),
           updatedAt: serverTimestamp(),
-        });
-      } else {
-        await setDoc(ref, {
-          dateKey,
-          startAt: serverTimestamp(),
-          endAt: null,
-          breakStartAt: null,
-          breakEndAt: null,
-          status: "started",
           createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
+        },
+        { merge: true }
+      );
 
-      await refreshDay(profile.uid);
+      await loadTodayWorkday(profile.uid, todayKey);
       setMsg("Рабочий день начат.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка: не удалось начать рабочий день");
+      setMsg(e?.message || "Ошибка начала рабочего дня");
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function endDay() {
+  async function handleEndDay() {
+    if (!profile?.uid) return;
+
+    setSaving(true);
     setMsg("");
-    if (!profile?.uid || !db) return;
 
     try {
-      const ref = doc(db, "Users", profile.uid, "Workdays", dateKey);
-      const snap = await getDoc(ref);
-
-      if (!snap.exists()) {
-        setMsg("Сначала начни рабочий день.");
-        return;
-      }
-
-      const data = snap.data() || {};
-
-      if (!data.startAt) {
-        setMsg("Сначала начни рабочий день.");
-        return;
-      }
-
-      if (data.endAt) {
-        setMsg("Рабочий день уже завершён.");
-        return;
-      }
+      const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
       await updateDoc(ref, {
-        endAt: serverTimestamp(),
         status: "ended",
+        endTime: getNowTime(),
         updatedAt: serverTimestamp(),
       });
 
-      await refreshDay(profile.uid);
+      await loadTodayWorkday(profile.uid, todayKey);
       setMsg("Рабочий день завершён.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка: не удалось завершить рабочий день");
+      setMsg(e?.message || "Ошибка завершения рабочего дня");
+    } finally {
+      setSaving(false);
     }
   }
+
+  const canStart = !todayWorkday || String(todayWorkday.status || "") !== "started";
+  const canEnd = !!todayWorkday && String(todayWorkday.status || "") === "started";
 
   if (loading) {
     return (
@@ -222,22 +190,12 @@ export default function ManagerDashboardPage() {
     );
   }
 
-  if (!profile) {
-    return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Профиль не найден</div>
-      </main>
-    );
-  }
-
   return (
     <main className={styles.page}>
       <div className={`${styles.card} ${typo.base}`}>
         <div className={styles.header}>
           <div>
-            <div className={`${styles.title} ${typo.title}`}>
-              Кабинет директора
-            </div>
+            <div className={`${styles.title} ${typo.title}`}>Кабинет директора</div>
             <div className={styles.subtitle}>Solar E-Tron</div>
           </div>
         </div>
@@ -245,69 +203,89 @@ export default function ManagerDashboardPage() {
         <div className={styles.infoBox}>
           <div className={styles.infoRow}>
             <span className={styles.label}>Имя:</span>
-            <span className={styles.value}>{profile.firstName || "-"}</span>
+            <span className={styles.value}>{profile?.firstName || "-"}</span>
           </div>
+
           <div className={styles.infoRow}>
             <span className={styles.label}>Фамилия:</span>
-            <span className={styles.value}>{profile.lastName || "-"}</span>
+            <span className={styles.value}>{profile?.lastName || "-"}</span>
           </div>
+
           <div className={styles.infoRow}>
             <span className={styles.label}>E-mail:</span>
-            <span className={styles.value}>{profile.email || "-"}</span>
+            <span className={styles.value}>{profile?.email || "-"}</span>
           </div>
+
           <div className={styles.infoRow}>
             <span className={styles.label}>Личный номер:</span>
-            <span className={styles.value}>{profile.personalNumber || "-"}</span>
+            <span className={styles.value}>{profile?.personalNumber || "-"}</span>
           </div>
+
           <div className={styles.infoRow}>
             <span className={styles.label}>Роль:</span>
-            <span className={styles.value}>{roleLabel(profile.role)}</span>
+            <span className={styles.value}>{roleLabel(profile?.role)}</span>
           </div>
+
           <div className={styles.infoRow}>
             <span className={styles.label}>Статус:</span>
-            <span className={styles.value}>{profile.status || "-"}</span>
+            <span className={styles.value}>{profile?.status || "-"}</span>
           </div>
+
           <div className={styles.infoRow}>
             <span className={styles.label}>Статус дня:</span>
             <span className={styles.value}>
-              {ended ? "Завершён" : started ? "Идёт" : "Не начат"}
+              {dayStatusLabel(todayWorkday?.status)}
             </span>
           </div>
         </div>
 
-        <div className={styles.actionsGrid}>
-          <Link href="/admin/users" legacyBehavior>
-            <a className={styles.actionButton}>Пользователи</a>
+        <div style={menuGridStyle}>
+          <Link href="/admin/users" className={styles.actionButton} style={menuBtnStyle}>
+            Пользователи
           </Link>
 
-          <Link href="/manager/objects" legacyBehavior>
-            <a className={styles.actionButton}>Объекты</a>
+          <Link href="/manager/objects" className={styles.actionButton} style={menuBtnStyle}>
+            Объекты
           </Link>
 
-          <Link href="/manager/documents" legacyBehavior>
-            <a className={styles.actionButton}>Документы работников</a>
+          <Link href="/manager/brigades" className={styles.actionButton} style={menuBtnStyle}>
+            Бригады
           </Link>
 
-          <Link href="/manager/workdays" legacyBehavior>
-            <a className={styles.actionButton}>Рабочее время работников</a>
+          <Link href="/manager/documents" className={styles.actionButton} style={menuBtnStyle}>
+            Документы работников
           </Link>
 
+          <Link href="/manager/workdays" className={styles.actionButton} style={menuBtnStyle}>
+            Рабочее время работников
+          </Link>
+        </div>
+
+        <div style={menuGridStyle}>
           <button
-            className={styles.actionButton}
             type="button"
-            onClick={startDay}
-            disabled={!canStartDay}
-            style={{ opacity: canStartDay ? 1 : 0.5 }}
+            onClick={handleStartDay}
+            disabled={!canStart || saving}
+            className={styles.actionButton}
+            style={{
+              ...menuBtnStyle,
+              opacity: !canStart || saving ? 0.55 : 1,
+              cursor: !canStart || saving ? "not-allowed" : "pointer",
+            }}
           >
             Начать рабочий день
           </button>
 
           <button
-            className={styles.actionButton}
             type="button"
-            onClick={endDay}
-            disabled={!canEndDay}
-            style={{ opacity: canEndDay ? 1 : 0.5 }}
+            onClick={handleEndDay}
+            disabled={!canEnd || saving}
+            className={styles.actionButton}
+            style={{
+              ...menuBtnStyle,
+              opacity: !canEnd || saving ? 0.55 : 1,
+              cursor: !canEnd || saving ? "not-allowed" : "pointer",
+            }}
           >
             Завершить рабочий день
           </button>
@@ -317,14 +295,15 @@ export default function ManagerDashboardPage() {
 
         <div className={styles.footer}>
           <button
-            onClick={handleLogout}
-            className={styles.btnSecondary}
             type="button"
+            onClick={() => signOut(auth)}
+            className={styles.link}
+            style={footerBtnStyle}
           >
             Выйти
           </button>
 
-          <Link href="/" className={styles.link}>
+          <Link className={styles.link} href="/">
             На главную
           </Link>
         </div>
@@ -332,3 +311,26 @@ export default function ManagerDashboardPage() {
     </main>
   );
 }
+
+const menuGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: 12,
+  marginTop: 14,
+};
+
+const menuBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 56,
+  textAlign: "center",
+  textDecoration: "none",
+};
+
+const footerBtnStyle = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+};
