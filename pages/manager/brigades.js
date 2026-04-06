@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -34,7 +34,7 @@ export default function ManagerBrigadesPage() {
   const [msg, setMsg] = useState("");
 
   const [usersList, setUsersList] = useState([]);
-  const [objectsList, setObjectsList] = useState([]);
+  const [objects, setObjects] = useState([]);
   const [brigades, setBrigades] = useState([]);
 
   const [brigadeName, setBrigadeName] = useState("");
@@ -44,10 +44,6 @@ export default function ManagerBrigadesPage() {
 
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
-
-  const selectedObject = useMemo(() => {
-    return objectsList.find((x) => x.id === selectedObjectId) || null;
-  }, [objectsList, selectedObjectId]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -114,15 +110,15 @@ export default function ManagerBrigadesPage() {
   }
 
   async function loadObjects() {
-    const snap = await getDocs(collection(db, "Objects"));
+    const q = query(collection(db, "Objects"), orderBy("name"));
+    const snap = await getDocs(q);
 
-    const list = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) =>
-        String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
-      );
+    const list = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
 
-    setObjectsList(list);
+    setObjects(list);
   }
 
   async function loadBrigades() {
@@ -155,13 +151,15 @@ export default function ManagerBrigadesPage() {
     setMsg("");
 
     const name = String(brigadeName || "").trim();
+    const selectedObject =
+      objects.find((item) => item.id === selectedObjectId) || null;
 
     if (!name) {
       setMsg("Укажи название бригады.");
       return;
     }
 
-    if (!selectedObjectId || !selectedObject) {
+    if (!selectedObject) {
       setMsg("Выбери объект для бригады.");
       return;
     }
@@ -222,8 +220,8 @@ export default function ManagerBrigadesPage() {
   }
 
   async function handleDelete(item) {
-    const ok = window.confirm(`Удалить бригаду "${item.name || item.id}"?`);
-    if (!ok) return;
+    const yes = window.confirm(`Удалить бригаду "${item.name || item.id}"?`);
+    if (!yes) return;
 
     setDeletingId(item.id);
     setMsg("");
@@ -259,7 +257,7 @@ export default function ManagerBrigadesPage() {
           <div>
             <div className={`${styles.title} ${typo.title}`}>Бригады</div>
             <div className={styles.subtitle}>
-              Директор / администратор назначает состав, название и объект бригады
+              Название бригады, объект и участники
             </div>
           </div>
         </div>
@@ -284,7 +282,7 @@ export default function ManagerBrigadesPage() {
                 style={inputStyle}
               >
                 <option value="">Выбери объект</option>
-                {objectsList.map((item) => (
+                {objects.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name || item.id}
                   </option>
@@ -329,7 +327,7 @@ export default function ManagerBrigadesPage() {
                 type="submit"
                 className={styles.actionButton}
                 disabled={saving}
-                style={{ opacity: saving ? 0.6 : 1, maxWidth: 260 }}
+                style={{ opacity: saving ? 0.6 : 1, maxWidth: 240 }}
               >
                 {saving
                   ? "Сохранение..."
