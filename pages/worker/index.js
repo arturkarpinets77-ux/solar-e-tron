@@ -180,6 +180,14 @@ export default function WorkerIndexPage() {
             Отчёт по конструкциям
           </Link>
 
+          <Link
+            href="/worker/construction-reports-history"
+            className={s.actionButton}
+            style={menuBtnStyle}
+          >
+            Мои отчёты по конструкциям
+          </Link>
+
           <Link href="/worker/history" className={s.actionButton} style={menuBtnStyle}>
             История рабочего времени
           </Link>
