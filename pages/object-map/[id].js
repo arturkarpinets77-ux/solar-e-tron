@@ -1,3 +1,4 @@
+// pages/object-map/[id].js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -6,19 +7,15 @@ import { auth, db, storage } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
   updateDoc,
-  deleteDoc,
 } from "firebase/firestore";
-import {
-  ref,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import s from "../../styles/objectMap.module.css";
 
@@ -45,6 +42,64 @@ function roleLabel(role) {
   return role || "-";
 }
 
+function getConstructionStatusMeta(status) {
+  const value = String(status || "not_started");
+
+  if (value === "frame_done") {
+    return {
+      label: "Конструкция собрана",
+      color: "#3b82f6",
+      background: "rgba(59,130,246,0.14)",
+      border: "rgba(59,130,246,0.45)",
+    };
+  }
+
+  if (value === "panels_installed_not_wrapped") {
+    return {
+      label: "Панели установлены, не обтянуты",
+      color: "#f59e0b",
+      background: "rgba(245,158,11,0.16)",
+      border: "rgba(245,158,11,0.45)",
+    };
+  }
+
+  if (value === "done") {
+    return {
+      label: "Готово",
+      color: "#22c55e",
+      background: "rgba(34,197,94,0.16)",
+      border: "rgba(34,197,94,0.45)",
+    };
+  }
+
+  return {
+    label: "Не начато",
+    color: "#94a3b8",
+    background: "rgba(148,163,184,0.14)",
+    border: "rgba(148,163,184,0.45)",
+  };
+}
+
+function buildConstructionNumbers(start, end) {
+  const startNum = Number(start);
+  const endNum = Number(end);
+
+  if (
+    !Number.isFinite(startNum) ||
+    !Number.isFinite(endNum) ||
+    startNum < 1 ||
+    endNum < startNum
+  ) {
+    return [];
+  }
+
+  const list = [];
+  for (let i = startNum; i <= endNum; i += 1) {
+    list.push(i);
+  }
+  return list;
+}
+
 export default function ObjectMapPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -55,6 +110,7 @@ export default function ObjectMapPage() {
   const [profile, setProfile] = useState(null);
   const [objectItem, setObjectItem] = useState(null);
   const [markers, setMarkers] = useState([]);
+  const [constructionStates, setConstructionStates] = useState([]);
 
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [mapFile, setMapFile] = useState(null);
@@ -74,10 +130,87 @@ export default function ObjectMapPage() {
   const [markerConstructionsCount, setMarkerConstructionsCount] = useState("");
   const [markerNote, setMarkerNote] = useState("");
 
+  const [selectedConstructionNumber, setSelectedConstructionNumber] = useState("");
+  const [constructionStatus, setConstructionStatus] = useState("not_started");
+  const [savingConstruction, setSavingConstruction] = useState(false);
+
   const canEdit = useMemo(() => {
     const role = String(profile?.role || "").toLowerCase();
     return role === "director" || role === "admin";
   }, [profile]);
+
+  const constructionNumbers = useMemo(() => {
+    return buildConstructionNumbers(
+      objectItem?.constructionStartNumber,
+      objectItem?.constructionEndNumber
+    );
+  }, [objectItem?.constructionStartNumber, objectItem?.constructionEndNumber]);
+
+  const constructionStatesMap = useMemo(() => {
+    const map = new Map();
+    constructionStates.forEach((item) => {
+      map.set(Number(item.number), item);
+    });
+    return map;
+  }, [constructionStates]);
+
+  const planConstructions = useMemo(() => {
+    if (Number(objectItem?.mapPlanConstructions || 0) > 0) {
+      return Number(objectItem?.mapPlanConstructions || 0);
+    }
+    return constructionNumbers.length;
+  }, [objectItem?.mapPlanConstructions, constructionNumbers.length]);
+
+  const planPanels = useMemo(() => {
+    if (Number(objectItem?.mapPlanPanels || 0) > 0) {
+      return Number(objectItem?.mapPlanPanels || 0);
+    }
+
+    const perConstruction = Number(objectItem?.panelsPerConstruction || 0);
+    if (perConstruction > 0 && constructionNumbers.length > 0) {
+      return perConstruction * constructionNumbers.length;
+    }
+
+    return 0;
+  }, [
+    objectItem?.mapPlanPanels,
+    objectItem?.panelsPerConstruction,
+    constructionNumbers.length,
+  ]);
+
+  const constructedCount = useMemo(() => {
+    return constructionNumbers.filter((num) => {
+      const item = constructionStatesMap.get(num);
+      const status = String(item?.status || "not_started");
+      return status !== "not_started";
+    }).length;
+  }, [constructionNumbers, constructionStatesMap]);
+
+  const panelsNotWrappedConstructions = useMemo(() => {
+    return constructionNumbers.filter((num) => {
+      const item = constructionStatesMap.get(num);
+      return String(item?.status || "") === "panels_installed_not_wrapped";
+    }).length;
+  }, [constructionNumbers, constructionStatesMap]);
+
+  const doneConstructions = useMemo(() => {
+    return constructionNumbers.filter((num) => {
+      const item = constructionStatesMap.get(num);
+      return String(item?.status || "") === "done";
+    }).length;
+  }, [constructionNumbers, constructionStatesMap]);
+
+  const estimatedPanelsNotWrapped = useMemo(() => {
+    const perConstruction = Number(objectItem?.panelsPerConstruction || 0);
+    if (perConstruction <= 0) return 0;
+    return panelsNotWrappedConstructions * perConstruction;
+  }, [objectItem?.panelsPerConstruction, panelsNotWrappedConstructions]);
+
+  const estimatedPanelsDone = useMemo(() => {
+    const perConstruction = Number(objectItem?.panelsPerConstruction || 0);
+    if (perConstruction <= 0) return 0;
+    return doneConstructions * perConstruction;
+  }, [objectItem?.panelsPerConstruction, doneConstructions]);
 
   useEffect(() => {
     if (!auth || !db || !id) return;
@@ -126,6 +259,7 @@ export default function ObjectMapPage() {
           setMsg("Объект не найден.");
           setObjectItem(null);
           setMarkers([]);
+          setConstructionStates([]);
           return;
         }
 
@@ -135,6 +269,7 @@ export default function ObjectMapPage() {
           setMsg("У тебя нет доступа к карте этого объекта.");
           setObjectItem(null);
           setMarkers([]);
+          setConstructionStates([]);
           return;
         }
 
@@ -143,7 +278,10 @@ export default function ObjectMapPage() {
         setPlanPanelsInput(String(obj.mapPlanPanels || ""));
         setPlanConstructionsInput(String(obj.mapPlanConstructions || ""));
 
-        await loadMarkers(String(id));
+        await Promise.all([
+          loadMarkers(String(id)),
+          loadConstructionStates(String(id)),
+        ]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки карты объекта");
       } finally {
@@ -168,6 +306,20 @@ export default function ObjectMapPage() {
     });
 
     setMarkers(list);
+  }
+
+  async function loadConstructionStates(objectId) {
+    const snap = await getDocs(
+      collection(db, "Objects", objectId, "ConstructionStates")
+    );
+
+    const list = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    list.sort((a, b) => Number(a.number || 0) - Number(b.number || 0));
+    setConstructionStates(list);
   }
 
   function clearMarkerForm() {
@@ -345,16 +497,89 @@ export default function ObjectMapPage() {
     }
   }
 
-  const installedPanels = useMemo(() => {
+  function handleSelectConstruction(number) {
+    setSelectedConstructionNumber(String(number));
+
+    const current = constructionStatesMap.get(Number(number));
+    setConstructionStatus(String(current?.status || "not_started"));
+  }
+
+  async function handleSaveConstruction() {
+    if (!canEdit || !objectItem?.id) return;
+
+    const num = Number(selectedConstructionNumber);
+
+    if (!Number.isFinite(num) || num < 1) {
+      setMsg("Сначала выбери конструкцию.");
+      return;
+    }
+
+    setSavingConstruction(true);
+    setMsg("");
+
+    try {
+      await setDoc(
+        doc(db, "Objects", objectItem.id, "ConstructionStates", String(num)),
+        {
+          number: num,
+          status: String(constructionStatus || "not_started"),
+          updatedAt: serverTimestamp(),
+          updatedBy: profile?.uid || null,
+        },
+        { merge: true }
+      );
+
+      await loadConstructionStates(objectItem.id);
+      setMsg("Статус конструкции сохранён.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка сохранения статуса конструкции");
+    } finally {
+      setSavingConstruction(false);
+    }
+  }
+
+  async function handleResetConstruction() {
+    if (!canEdit || !objectItem?.id) return;
+
+    const num = Number(selectedConstructionNumber);
+
+    if (!Number.isFinite(num) || num < 1) {
+      setMsg("Сначала выбери конструкцию.");
+      return;
+    }
+
+    setSavingConstruction(true);
+    setMsg("");
+
+    try {
+      await deleteDoc(
+        doc(db, "Objects", objectItem.id, "ConstructionStates", String(num))
+      );
+
+      await loadConstructionStates(objectItem.id);
+      setConstructionStatus("not_started");
+      setMsg("Статус конструкции сброшен.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка сброса статуса конструкции");
+    } finally {
+      setSavingConstruction(false);
+    }
+  }
+
+  const installedPanelsByMarkers = useMemo(() => {
     return markers.reduce((sum, item) => sum + Number(item.panelsCount || 0), 0);
   }, [markers]);
 
-  const installedConstructions = useMemo(() => {
-    return markers.reduce((sum, item) => sum + Number(item.constructionsCount || 0), 0);
+  const installedConstructionsByMarkers = useMemo(() => {
+    return markers.reduce(
+      (sum, item) => sum + Number(item.constructionsCount || 0),
+      0
+    );
   }, [markers]);
 
-  const planPanels = Number(objectItem?.mapPlanPanels || 0);
-  const planConstructions = Number(objectItem?.mapPlanConstructions || 0);
+  const selectedConstructionMeta = useMemo(() => {
+    return getConstructionStatusMeta(constructionStatus);
+  }, [constructionStatus]);
 
   if (loading) {
     return (
@@ -388,22 +613,72 @@ export default function ObjectMapPage() {
           </div>
         </div>
 
-        <div className={s.statsGrid}>
-          <div className={s.statBox}>
-            <div className={s.statLabel}>План панелей</div>
-            <div className={s.statValue}>{planPanels}</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+            marginTop: 12,
+          }}
+        >
+          <div style={statBoxStyle}>
+            <div style={statLabelStyle}>План панелей</div>
+            <div style={statValueStyle}>{planPanels}</div>
           </div>
-          <div className={s.statBox}>
-            <div className={s.statLabel}>Установлено панелей</div>
-            <div className={s.statValue}>{installedPanels}</div>
+
+          <div style={statBoxStyle}>
+            <div style={statLabelStyle}>Панелей готово</div>
+            <div style={statValueStyle}>{estimatedPanelsDone}</div>
           </div>
-          <div className={s.statBox}>
-            <div className={s.statLabel}>План конструкций</div>
-            <div className={s.statValue}>{planConstructions}</div>
+
+          <div style={statBoxStyle}>
+            <div style={statLabelStyle}>Панелей не обтянуты</div>
+            <div style={statValueStyle}>{estimatedPanelsNotWrapped}</div>
           </div>
-          <div className={s.statBox}>
-            <div className={s.statLabel}>Собрано конструкций</div>
-            <div className={s.statValue}>{installedConstructions}</div>
+
+          <div style={statBoxStyle}>
+            <div style={statLabelStyle}>План конструкций</div>
+            <div style={statValueStyle}>{planConstructions}</div>
+          </div>
+
+          <div style={statBoxStyle}>
+            <div style={statLabelStyle}>Конструкции начаты</div>
+            <div style={statValueStyle}>{constructedCount}</div>
+          </div>
+
+          <div style={statBoxStyle}>
+            <div style={statLabelStyle}>Конструкции готово</div>
+            <div style={statValueStyle}>{doneConstructions}</div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: 12,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.72)",
+            border: "1px solid rgba(15,23,42,0.08)",
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          <div>
+            <b>Диапазон конструкций:</b>{" "}
+            {constructionNumbers.length
+              ? `${constructionNumbers[0]} – ${
+                  constructionNumbers[constructionNumbers.length - 1]
+                }`
+              : "-"}
+          </div>
+          <div>
+            <b>Панелей на конструкцию:</b>{" "}
+            {Number(objectItem?.panelsPerConstruction || 0)}
+          </div>
+          <div style={{ marginTop: 6, opacity: 0.8 }}>
+            Старые ручные маркировки на карте оставлены. Новый блок
+            <b> “Карта конструкций” </b>
+            уже работает отдельно и будет основой для дальнейшей динамики.
           </div>
         </div>
 
@@ -467,7 +742,11 @@ export default function ObjectMapPage() {
             </div>
 
             <div className={s.rowButtons}>
-              <button className={s.primaryBtn} type="button" onClick={handleSaveMapSettings}>
+              <button
+                className={s.primaryBtn}
+                type="button"
+                onClick={handleSaveMapSettings}
+              >
                 Сохранить настройки карты
               </button>
 
@@ -528,10 +807,144 @@ export default function ObjectMapPage() {
             </div>
           </div>
         ) : (
-          <div className={s.emptyBox}>
-            Пока не задано изображение схемы объекта.
-          </div>
+          <div className={s.emptyBox}>Пока не задано изображение схемы объекта.</div>
         )}
+
+        <div style={constructionSectionStyle}>
+          <div style={sectionTitleStyle}>Карта конструкций</div>
+
+          {constructionNumbers.length === 0 ? (
+            <div style={{ opacity: 0.75 }}>
+              Для этого объекта ещё не задан диапазон конструкций. Задай его в
+              кабинете директора в разделе объектов.
+            </div>
+          ) : (
+            <>
+              <div style={legendWrapStyle}>
+                {[
+                  "not_started",
+                  "frame_done",
+                  "panels_installed_not_wrapped",
+                  "done",
+                ].map((status) => {
+                  const meta = getConstructionStatusMeta(status);
+                  return (
+                    <div key={status} style={legendItemStyle}>
+                      <span
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: 4,
+                          background: meta.background,
+                          border: `1px solid ${meta.border}`,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span>{meta.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={constructionGridStyle}>
+                {constructionNumbers.map((num) => {
+                  const current = constructionStatesMap.get(num);
+                  const meta = getConstructionStatusMeta(current?.status);
+                  const active = String(selectedConstructionNumber) === String(num);
+
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleSelectConstruction(num)}
+                      style={{
+                        ...constructionCellStyle,
+                        background: meta.background,
+                        border: `1px solid ${active ? meta.color : meta.border}`,
+                        boxShadow: active
+                          ? `0 0 0 2px ${meta.color}33`
+                          : "none",
+                      }}
+                      title={`${num} — ${meta.label}`}
+                    >
+                      <div style={constructionNumberStyle}>{num}</div>
+                      <div style={constructionStatusStyle}>{meta.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={constructionEditorStyle}>
+                <div style={{ fontWeight: 800, marginBottom: 10 }}>
+                  {selectedConstructionNumber
+                    ? `Выбрана конструкция № ${selectedConstructionNumber}`
+                    : "Выбери конструкцию из списка выше"}
+                </div>
+
+                <div style={editorRowStyle}>
+                  <div style={{ minWidth: 220 }}>
+                    <label style={miniLabelStyle}>Статус конструкции</label>
+                    <select
+                      value={constructionStatus}
+                      onChange={(e) => setConstructionStatus(e.target.value)}
+                      disabled={!canEdit || !selectedConstructionNumber}
+                      style={editorInputStyle}
+                    >
+                      <option value="not_started">Не начато</option>
+                      <option value="frame_done">Конструкция собрана</option>
+                      <option value="panels_installed_not_wrapped">
+                        Панели установлены, не обтянуты
+                      </option>
+                      <option value="done">Готово</option>
+                    </select>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      background: selectedConstructionMeta.background,
+                      border: `1px solid ${selectedConstructionMeta.border}`,
+                      color: selectedConstructionMeta.color,
+                      fontWeight: 700,
+                      minWidth: 220,
+                    }}
+                  >
+                    Текущий выбор: {selectedConstructionMeta.label}
+                  </div>
+                </div>
+
+                {canEdit ? (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className={s.primaryBtn}
+                      onClick={handleSaveConstruction}
+                      disabled={savingConstruction || !selectedConstructionNumber}
+                    >
+                      {savingConstruction
+                        ? "Сохранение..."
+                        : "Сохранить статус конструкции"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className={s.secondaryBtn}
+                      onClick={handleResetConstruction}
+                      disabled={savingConstruction || !selectedConstructionNumber}
+                    >
+                      Сбросить статус
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 10, opacity: 0.75 }}>
+                    Работник сейчас видит карту конструкций только для просмотра.
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {canEdit ? (
           <div className={s.editorBox}>
@@ -677,11 +1090,29 @@ export default function ObjectMapPage() {
           )}
         </div>
 
+        <div
+          style={{
+            marginTop: 20,
+            padding: 14,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.72)",
+            border: "1px solid rgba(15,23,42,0.08)",
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Старые счётчики по маркировкам</div>
+          <div>Панели по ручным маркировкам: {installedPanelsByMarkers}</div>
+          <div>Конструкции по ручным маркировкам: {installedConstructionsByMarkers}</div>
+        </div>
+
         {msg ? <div className={s.msg}>{msg}</div> : null}
 
         <div className={s.footerLinks}>
           {String(profile?.role || "").toLowerCase() === "worker" ? (
-            <Link href={`/worker/object/${encodeURIComponent(objectItem.id)}`}>← К объекту</Link>
+            <Link href={`/worker/object/${encodeURIComponent(objectItem.id)}`}>
+              ← К объекту
+            </Link>
           ) : (
             <Link href="/manager/objects">← К объектам</Link>
           )}
@@ -690,3 +1121,115 @@ export default function ObjectMapPage() {
     </main>
   );
 }
+
+const statBoxStyle = {
+  borderRadius: 14,
+  padding: 14,
+  background: "rgba(255,255,255,0.76)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const statLabelStyle = {
+  fontSize: 13,
+  opacity: 0.75,
+  marginBottom: 8,
+  fontWeight: 700,
+};
+
+const statValueStyle = {
+  fontSize: 28,
+  fontWeight: 900,
+  lineHeight: 1,
+};
+
+const constructionSectionStyle = {
+  marginTop: 24,
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.78)",
+  border: "1px solid rgba(15,23,42,0.10)",
+};
+
+const sectionTitleStyle = {
+  fontSize: 24,
+  fontWeight: 900,
+  marginBottom: 14,
+};
+
+const legendWrapStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  marginBottom: 14,
+};
+
+const legendItemStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "8px 10px",
+  borderRadius: 12,
+  background: "rgba(248,250,252,0.95)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  fontSize: 13,
+};
+
+const constructionGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+  gap: 10,
+};
+
+const constructionCellStyle = {
+  borderRadius: 14,
+  minHeight: 90,
+  padding: 10,
+  textAlign: "left",
+  cursor: "pointer",
+  transition: "0.15s ease",
+};
+
+const constructionNumberStyle = {
+  fontSize: 20,
+  fontWeight: 900,
+  marginBottom: 8,
+};
+
+const constructionStatusStyle = {
+  fontSize: 12,
+  lineHeight: 1.3,
+  opacity: 0.9,
+};
+
+const constructionEditorStyle = {
+  marginTop: 16,
+  padding: 14,
+  borderRadius: 14,
+  background: "rgba(248,250,252,0.95)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const editorRowStyle = {
+  display: "flex",
+  gap: 12,
+  flexWrap: "wrap",
+  alignItems: "end",
+};
+
+const miniLabelStyle = {
+  display: "block",
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const editorInputStyle = {
+  width: "100%",
+  minWidth: 220,
+  height: 44,
+  borderRadius: 12,
+  border: "1px solid rgba(15,23,42,0.18)",
+  background: "#fff",
+  padding: "0 12px",
+  outline: "none",
+};
