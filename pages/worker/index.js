@@ -4,77 +4,75 @@ import { useRouter } from "next/router";
 
 import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 
-import styles from "../../styles/worker.module.css";
-import typo from "../../styles/typography.module.css";
+import s from "../../styles/worker.module.css";
 
-function roleLabel(role) {
-  const value = String(role || "").toLowerCase();
-
-  if (value === "worker") return "Работник";
-  if (value === "accountant") return "Бухгалтер";
-  if (value === "director") return "Директор";
-  if (value === "admin") return "Администратор";
-
-  return role || "-";
-}
-
-export default function WorkerDashboard() {
+export default function WorkerIndexPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
+
   const [profile, setProfile] = useState(null);
+  const [brigadeName, setBrigadeName] = useState("");
 
   useEffect(() => {
     if (!auth || !db) return;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
+      setLoading(true);
       setMsg("");
+
       if (!user) {
         router.replace("/login");
         return;
       }
 
       try {
-        const snap = await getDoc(doc(db, "Users", user.uid));
-        if (!snap.exists()) {
+        const userRef = doc(db, "Users", user.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
           await signOut(auth);
           router.replace("/login");
           return;
         }
 
-        const data = snap.data() || {};
-        const role = String(data.role || "").trim().toLowerCase();
-        const status = String(data.status || "").trim().toLowerCase();
+        const data = userSnap.data() || {};
+        const role = String(data.role || "").toLowerCase();
+        const status = String(data.status || "").toLowerCase();
 
-        if (status !== "active" || role !== "worker") {
+        if (status !== "active") {
           router.replace("/dashboard");
           return;
         }
 
-        const firstName =
-          String(data.firstName || "").trim() ||
-          String(data.name || "").trim() ||
-          "";
-
-        const lastName =
-          String(data.lastName || "").trim() ||
-          String(data.surname || "").trim() ||
-          "";
+        if (role !== "worker") {
+          router.replace("/dashboard");
+          return;
+        }
 
         setProfile({
           uid: user.uid,
-          email: String(data.email || user.email || "").trim(),
-          personalNumber: String(data.personalNumber || "").trim(),
+          firstName: String(data.firstName || ""),
+          lastName: String(data.lastName || ""),
+          email: String(data.email || user.email || ""),
+          personalNumber: String(data.personalNumber || ""),
           role,
           status,
-          firstName,
-          lastName,
         });
+
+        await loadMyBrigade(user.uid);
       } catch (e) {
-        setMsg(e?.message || "Ошибка загрузки профиля");
+        setMsg(e?.message || "Ошибка загрузки кабинета работника");
       } finally {
         setLoading(false);
       }
@@ -83,102 +81,192 @@ export default function WorkerDashboard() {
     return () => unsub();
   }, [router]);
 
-  async function handleLogout() {
-    try {
-      await signOut(auth);
-      router.replace("/");
-    } catch (e) {
-      setMsg(e?.message || "Ошибка выхода");
+  async function loadMyBrigade(uid) {
+    const q = query(
+      collection(db, "Brigades"),
+      where("memberUids", "array-contains", uid)
+    );
+
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+      setBrigadeName("");
+      return;
     }
+
+    const first = snap.docs[0].data() || {};
+    setBrigadeName(String(first.name || ""));
+  }
+
+  function roleLabel(role) {
+    const value = String(role || "").toLowerCase();
+    if (value === "worker") return "Работник";
+    return role || "-";
   }
 
   if (loading) {
     return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
-      </main>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Профиль не найден</div>
+      <main className={s.page}>
+        <div className={s.card}>Загрузка...</div>
       </main>
     );
   }
 
   return (
-    <main className={styles.page}>
-      <div className={`${styles.card} ${typo.base}`}>
-        <div className={styles.header}>
+    <main className={s.page}>
+      <div className={s.card}>
+        <div className={s.header}>
           <div>
-            <div className={`${styles.title} ${typo.title}`}>Кабинет работника</div>
-            <div className={styles.subtitle}>Solar E-Tron</div>
+            <h1 className={s.title}>Кабинет работника</h1>
+            <div className={s.subtitle}>Solar E-Tron</div>
           </div>
         </div>
 
-        <div className={styles.infoBox}>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Имя:</span>
-            <span className={styles.value}>{profile.firstName || "-"}</span>
+        <div style={infoBoxStyle}>
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Имя:</span>
+            <span style={valueStyle}>{profile?.firstName || "-"}</span>
           </div>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Фамилия:</span>
-            <span className={styles.value}>{profile.lastName || "-"}</span>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Фамилия:</span>
+            <span style={valueStyle}>{profile?.lastName || "-"}</span>
           </div>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>E-mail:</span>
-            <span className={styles.value}>{profile.email || "-"}</span>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>E-mail:</span>
+            <span style={valueStyle}>{profile?.email || "-"}</span>
           </div>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Личный номер:</span>
-            <span className={styles.value}>{profile.personalNumber || "-"}</span>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Личный номер:</span>
+            <span style={valueStyle}>{profile?.personalNumber || "-"}</span>
           </div>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Роль:</span>
-            <span className={styles.value}>{roleLabel(profile.role)}</span>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Роль:</span>
+            <span style={valueStyle}>{roleLabel(profile?.role)}</span>
           </div>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Статус:</span>
-            <span className={styles.value}>{profile.status || "-"}</span>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Статус:</span>
+            <span style={valueStyle}>{profile?.status || "-"}</span>
+          </div>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Бригада:</span>
+            <span style={valueStyle}>{brigadeName || "Не назначен"}</span>
           </div>
         </div>
 
-        <div className={styles.actionsGrid}>
-  <Link href="/worker/workday" className={styles.actionButton}>
-    Отметка рабочего дня
-  </Link>
+        <div style={menuGridStyle}>
+          <Link href="/worker/workday" className={s.actionButton} style={menuBtnStyle}>
+            Отметка рабочего дня
+          </Link>
 
-  <Link href="/worker/objects" legacyBehavior>
-    <a className={styles.actionButton}>Объекты</a>
-  </Link>
+          <Link href="/worker/objects" className={s.actionButton} style={menuBtnStyle}>
+            Объекты
+          </Link>
 
-  <Link href="/worker/photo" legacyBehavior>
-    <a className={styles.actionButton}>Добавить фотоотчёт</a>
-  </Link>
+          <Link href="/worker/photo" className={s.actionButton} style={menuBtnStyle}>
+            Добавить фотоотчёт
+          </Link>
 
-  <Link href="/worker/history" legacyBehavior>
-    <a className={styles.actionButton}>История рабочего времени</a>
-  </Link>
+          <Link
+            href="/worker/construction-reports"
+            className={s.actionButton}
+            style={menuBtnStyle}
+          >
+            Отчёт по конструкциям
+          </Link>
 
-  <Link href="/worker/profile" legacyBehavior>
-    <a className={styles.actionButton}>Мой профиль</a>
-  </Link>
-</div>
+          <Link href="/worker/history" className={s.actionButton} style={menuBtnStyle}>
+            История рабочего времени
+          </Link>
 
-        {msg ? <div className={styles.msg}>{msg}</div> : null}
+          <Link href="/worker/profile" className={s.actionButton} style={menuBtnStyle}>
+            Мой профиль
+          </Link>
+        </div>
 
-        <div className={styles.footer}>
-          <button onClick={handleLogout} className={styles.btnSecondary} type="button">
+        {msg ? <div style={msgStyle}>{msg}</div> : null}
+
+        <div style={footerStyle}>
+          <button
+            type="button"
+            onClick={() => signOut(auth)}
+            style={footerBtnStyle}
+          >
             Выйти
           </button>
 
-          <Link href="/" className={styles.link}>
-            На главную
-          </Link>
+          <Link href="/">На главную</Link>
         </div>
       </div>
     </main>
   );
 }
+
+const infoBoxStyle = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.82)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  marginTop: 12,
+};
+
+const infoRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "160px 1fr",
+  gap: 10,
+  marginBottom: 8,
+  alignItems: "start",
+};
+
+const labelStyle = {
+  fontWeight: 700,
+};
+
+const valueStyle = {
+  wordBreak: "break-word",
+};
+
+const menuGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: 14,
+  marginTop: 18,
+};
+
+const menuBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 64,
+  textAlign: "center",
+  textDecoration: "none",
+};
+
+const msgStyle = {
+  marginTop: 14,
+  padding: 12,
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.85)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const footerStyle = {
+  display: "flex",
+  gap: 16,
+  flexWrap: "wrap",
+  marginTop: 16,
+};
+
+const footerBtnStyle = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  color: "#1d4ed8",
+  cursor: "pointer",
+  font: "inherit",
+};
