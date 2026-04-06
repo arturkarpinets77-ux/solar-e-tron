@@ -19,17 +19,25 @@ import {
 import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
 
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+  if (value === "worker") return "Работник";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+  return role || "-";
+}
+
 export default function ManagerBrigadesPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const [workers, setWorkers] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   const [brigades, setBrigades] = useState([]);
 
   const [brigadeName, setBrigadeName] = useState("");
-  const [selectedWorkers, setSelectedWorkers] = useState([]);
+  const [selectedUsers, setSelectedUsers] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
   const [saving, setSaving] = useState(false);
@@ -69,7 +77,7 @@ export default function ManagerBrigadesPage() {
           return;
         }
 
-        await Promise.all([loadWorkers(), loadBrigades()]);
+        await Promise.all([loadUsers(), loadBrigades()]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки бригад");
       } finally {
@@ -80,20 +88,23 @@ export default function ManagerBrigadesPage() {
     return () => unsub();
   }, [router]);
 
-  async function loadWorkers() {
+  async function loadUsers() {
     const snap = await getDocs(collection(db, "Users"));
 
     const list = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((u) => String(u.role || "").toLowerCase() === "worker")
-      .filter((u) => String(u.status || "").toLowerCase() === "active")
+      .filter((u) => {
+        const role = String(u.role || "").toLowerCase();
+        const status = String(u.status || "").toLowerCase();
+        return status === "active" && (role === "worker" || role === "director");
+      })
       .sort((a, b) => {
         const aName = `${a.firstName || ""} ${a.lastName || ""}`.trim();
         const bName = `${b.firstName || ""} ${b.lastName || ""}`.trim();
         return aName.localeCompare(bName, "ru");
       });
 
-    setWorkers(list);
+    setUsersList(list);
   }
 
   async function loadBrigades() {
@@ -110,12 +121,12 @@ export default function ManagerBrigadesPage() {
 
   function resetForm() {
     setBrigadeName("");
-    setSelectedWorkers([]);
+    setSelectedUsers([]);
     setEditingId(null);
   }
 
-  function toggleWorker(uid) {
-    setSelectedWorkers((prev) =>
+  function toggleUser(uid) {
+    setSelectedUsers((prev) =>
       prev.includes(uid) ? prev.filter((x) => x !== uid) : [...prev, uid]
     );
   }
@@ -131,18 +142,23 @@ export default function ManagerBrigadesPage() {
       return;
     }
 
-    if (selectedWorkers.length === 0) {
-      setMsg("Выбери хотя бы одного работника.");
+    if (selectedUsers.length === 0) {
+      setMsg("Выбери хотя бы одного участника.");
       return;
     }
 
-    const memberNames = workers
-      .filter((w) => selectedWorkers.includes(w.id))
-      .map((w) => {
-        const fullName =
-          `${w.firstName || ""} ${w.lastName || ""}`.trim() || w.email || w.id;
-        return fullName;
-      });
+    const members = usersList
+      .filter((u) => selectedUsers.includes(u.id))
+      .map((u) => ({
+        uid: u.id,
+        name:
+          `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email || u.id,
+        role: String(u.role || ""),
+        personalNumber: String(u.personalNumber || ""),
+        email: String(u.email || ""),
+      }));
+
+    const memberNames = members.map((m) => m.name);
 
     setSaving(true);
     try {
@@ -152,8 +168,9 @@ export default function ManagerBrigadesPage() {
         doc(db, "Brigades", brigadeId),
         {
           name,
-          memberUids: selectedWorkers,
+          memberUids: selectedUsers,
           memberNames,
+          members,
           updatedAt: serverTimestamp(),
           ...(editingId ? {} : { createdAt: serverTimestamp() }),
         },
@@ -173,7 +190,7 @@ export default function ManagerBrigadesPage() {
   function handleEdit(item) {
     setEditingId(item.id);
     setBrigadeName(String(item.name || ""));
-    setSelectedWorkers(Array.isArray(item.memberUids) ? item.memberUids : []);
+    setSelectedUsers(Array.isArray(item.memberUids) ? item.memberUids : []);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -235,26 +252,27 @@ export default function ManagerBrigadesPage() {
             <div>
               <div style={labelStyle}>Участники бригады</div>
 
-              <div style={workersBoxStyle}>
-                {workers.length === 0 ? (
-                  <div style={{ opacity: 0.7 }}>Нет активных работников</div>
+              <div style={usersBoxStyle}>
+                {usersList.length === 0 ? (
+                  <div style={{ opacity: 0.7 }}>Нет активных работников и директоров</div>
                 ) : (
-                  workers.map((w) => {
+                  usersList.map((u) => {
                     const fullName =
-                      `${w.firstName || ""} ${w.lastName || ""}`.trim() ||
-                      w.email ||
-                      w.id;
+                      `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+                      u.email ||
+                      u.id;
 
                     return (
-                      <label key={w.id} style={workerRowStyle}>
+                      <label key={u.id} style={userRowStyle}>
                         <input
                           type="checkbox"
-                          checked={selectedWorkers.includes(w.id)}
-                          onChange={() => toggleWorker(w.id)}
+                          checked={selectedUsers.includes(u.id)}
+                          onChange={() => toggleUser(u.id)}
                         />
                         <span>
                           {fullName}
-                          {w.personalNumber ? ` — ${w.personalNumber}` : ""}
+                          {u.personalNumber ? ` — ${u.personalNumber}` : ""}
+                          {` (${roleLabel(u.role)})`}
                         </span>
                       </label>
                     );
@@ -321,7 +339,11 @@ export default function ManagerBrigadesPage() {
 
                 <div>
                   <b>Состав:</b>{" "}
-                  {Array.isArray(item.memberNames) && item.memberNames.length
+                  {Array.isArray(item.members) && item.members.length
+                    ? item.members
+                        .map((m) => `${m.name}${m.role ? ` (${roleLabel(m.role)})` : ""}`)
+                        .join(", ")
+                    : Array.isArray(item.memberNames) && item.memberNames.length
                     ? item.memberNames.join(", ")
                     : "-"}
                 </div>
@@ -381,7 +403,7 @@ const labelStyle = {
   marginBottom: 6,
 };
 
-const workersBoxStyle = {
+const usersBoxStyle = {
   display: "grid",
   gap: 8,
   maxHeight: 260,
@@ -392,7 +414,7 @@ const workersBoxStyle = {
   background: "rgba(255, 252, 240, 0.70)",
 };
 
-const workerRowStyle = {
+const userRowStyle = {
   display: "flex",
   alignItems: "center",
   gap: 8,
