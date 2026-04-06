@@ -1,4 +1,3 @@
-// pages/object-map/[id].js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -15,7 +14,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 import s from "../../styles/objectMap.module.css";
 
@@ -42,44 +41,6 @@ function roleLabel(role) {
   return role || "-";
 }
 
-function getConstructionStatusMeta(status) {
-  const value = String(status || "not_started");
-
-  if (value === "frame_done") {
-    return {
-      label: "Конструкция собрана",
-      color: "#3b82f6",
-      background: "rgba(59,130,246,0.14)",
-      border: "rgba(59,130,246,0.45)",
-    };
-  }
-
-  if (value === "panels_installed_not_wrapped") {
-    return {
-      label: "Панели установлены, не обтянуты",
-      color: "#f59e0b",
-      background: "rgba(245,158,11,0.16)",
-      border: "rgba(245,158,11,0.45)",
-    };
-  }
-
-  if (value === "done") {
-    return {
-      label: "Готово",
-      color: "#22c55e",
-      background: "rgba(34,197,94,0.16)",
-      border: "rgba(34,197,94,0.45)",
-    };
-  }
-
-  return {
-    label: "Не начато",
-    color: "#94a3b8",
-    background: "rgba(148,163,184,0.14)",
-    border: "rgba(148,163,184,0.45)",
-  };
-}
-
 function buildConstructionNumbers(start, end) {
   const startNum = Number(start);
   const endNum = Number(end);
@@ -100,6 +61,202 @@ function buildConstructionNumbers(start, end) {
   return list;
 }
 
+const BASE_CATEGORY_DEFAULTS = [
+  {
+    id: "frame_built_not_wrapped",
+    code: "frame_built_not_wrapped",
+    name: "Конструкция собрана, не обтянута",
+    color: "#3b82f6",
+    type: "base",
+    sortOrder: 10,
+  },
+  {
+    id: "frame_built",
+    code: "frame_built",
+    name: "Конструкция собрана",
+    color: "#2563eb",
+    type: "base",
+    sortOrder: 20,
+  },
+  {
+    id: "panel_installed_not_wrapped",
+    code: "panel_installed_not_wrapped",
+    name: "Панели установлены, не обтянуты",
+    color: "#f59e0b",
+    type: "base",
+    sortOrder: 30,
+  },
+  {
+    id: "panel_wrapped",
+    code: "panel_wrapped",
+    name: "Панели обтянуты",
+    color: "#14b8a6",
+    type: "base",
+    sortOrder: 40,
+  },
+];
+
+function mergeCategories(dbCategories) {
+  const byCode = new Map();
+  dbCategories.forEach((item) => {
+    if (item.code) byCode.set(item.code, item);
+  });
+
+  const base = BASE_CATEGORY_DEFAULTS.map((item) => {
+    const saved = byCode.get(item.code);
+    return saved
+      ? {
+          ...item,
+          ...saved,
+          id: saved.id || item.id,
+        }
+      : item;
+  });
+
+  const custom = dbCategories
+    .filter((item) => String(item.type || "") === "custom")
+    .sort((a, b) => Number(a.sortOrder || 999) - Number(b.sortOrder || 999));
+
+  return [...base, ...custom];
+}
+
+function getCategoryByCode(categories, code) {
+  return categories.find((item) => item.code === code) || null;
+}
+
+function getFinalConstructionState(item) {
+  const frameStatus = String(item?.frameStatus || "not_started");
+  const panelStatus = String(item?.panelStatus || "not_started");
+  const customCount = Array.isArray(item?.customCategoryIds)
+    ? item.customCategoryIds.length
+    : 0;
+
+  if (frameStatus === "built" && panelStatus === "wrapped") {
+    return "done";
+  }
+
+  if (
+    frameStatus !== "not_started" ||
+    panelStatus !== "not_started" ||
+    customCount > 0
+  ) {
+    return "in_progress";
+  }
+
+  return "not_started";
+}
+
+function getCardVisual(item, categories) {
+  const finalState = getFinalConstructionState(item);
+
+  if (finalState === "done") {
+    return {
+      label: "Готова",
+      background: "rgba(34,197,94,0.16)",
+      border: "rgba(34,197,94,0.50)",
+      accent: "#22c55e",
+    };
+  }
+
+  if (finalState === "not_started") {
+    return {
+      label: "Не начато",
+      background: "rgba(148,163,184,0.12)",
+      border: "rgba(148,163,184,0.35)",
+      accent: "#94a3b8",
+    };
+  }
+
+  const panelStatus = String(item?.panelStatus || "not_started");
+  const frameStatus = String(item?.frameStatus || "not_started");
+  const customIds = Array.isArray(item?.customCategoryIds)
+    ? item.customCategoryIds
+    : [];
+
+  if (panelStatus === "installed_not_wrapped") {
+    const cat = getCategoryByCode(categories, "panel_installed_not_wrapped");
+    return {
+      label: "В работе",
+      background: hexToSoft(cat?.color || "#f59e0b"),
+      border: hexToBorder(cat?.color || "#f59e0b"),
+      accent: cat?.color || "#f59e0b",
+    };
+  }
+
+  if (panelStatus === "wrapped") {
+    const cat = getCategoryByCode(categories, "panel_wrapped");
+    return {
+      label: "В работе",
+      background: hexToSoft(cat?.color || "#14b8a6"),
+      border: hexToBorder(cat?.color || "#14b8a6"),
+      accent: cat?.color || "#14b8a6",
+    };
+  }
+
+  if (frameStatus === "built") {
+    const cat = getCategoryByCode(categories, "frame_built");
+    return {
+      label: "В работе",
+      background: hexToSoft(cat?.color || "#2563eb"),
+      border: hexToBorder(cat?.color || "#2563eb"),
+      accent: cat?.color || "#2563eb",
+    };
+  }
+
+  if (frameStatus === "built_not_wrapped") {
+    const cat = getCategoryByCode(categories, "frame_built_not_wrapped");
+    return {
+      label: "В работе",
+      background: hexToSoft(cat?.color || "#3b82f6"),
+      border: hexToBorder(cat?.color || "#3b82f6"),
+      accent: cat?.color || "#3b82f6",
+    };
+  }
+
+  if (customIds.length > 0) {
+    const custom = categories.find((item) => item.id === customIds[0]);
+    return {
+      label: "В работе",
+      background: hexToSoft(custom?.color || "#7c3aed"),
+      border: hexToBorder(custom?.color || "#7c3aed"),
+      accent: custom?.color || "#7c3aed",
+    };
+  }
+
+  return {
+    label: "Не начато",
+    background: "rgba(148,163,184,0.12)",
+    border: "rgba(148,163,184,0.35)",
+    accent: "#94a3b8",
+  };
+}
+
+function hexToSoft(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return "rgba(148,163,184,0.12)";
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.14)`;
+}
+
+function hexToBorder(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return "rgba(148,163,184,0.35)";
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`;
+}
+
+function hexToRgb(hex) {
+  const raw = String(hex || "").replace("#", "").trim();
+  if (raw.length !== 6) return null;
+
+  const bigint = parseInt(raw, 16);
+  if (Number.isNaN(bigint)) return null;
+
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255,
+  };
+}
+
 export default function ObjectMapPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -109,8 +266,9 @@ export default function ObjectMapPage() {
 
   const [profile, setProfile] = useState(null);
   const [objectItem, setObjectItem] = useState(null);
-  const [markers, setMarkers] = useState([]);
+
   const [constructionStates, setConstructionStates] = useState([]);
+  const [constructionCategories, setConstructionCategories] = useState([]);
 
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [mapFile, setMapFile] = useState(null);
@@ -119,20 +277,16 @@ export default function ObjectMapPage() {
   const [planPanelsInput, setPlanPanelsInput] = useState("");
   const [planConstructionsInput, setPlanConstructionsInput] = useState("");
 
-  const [editMode, setEditMode] = useState(false);
-  const [pendingPos, setPendingPos] = useState(null);
-
-  const [editingMarkerId, setEditingMarkerId] = useState("");
-  const [markerLabel, setMarkerLabel] = useState("");
-  const [markerType, setMarkerType] = useState("custom");
-  const [markerColor, setMarkerColor] = useState("#ff9800");
-  const [markerPanelsCount, setMarkerPanelsCount] = useState("");
-  const [markerConstructionsCount, setMarkerConstructionsCount] = useState("");
-  const [markerNote, setMarkerNote] = useState("");
-
   const [selectedConstructionNumber, setSelectedConstructionNumber] = useState("");
-  const [constructionStatus, setConstructionStatus] = useState("not_started");
+  const [frameStatus, setFrameStatus] = useState("not_started");
+  const [panelStatus, setPanelStatus] = useState("not_started");
+  const [selectedCustomCategoryIds, setSelectedCustomCategoryIds] = useState([]);
   const [savingConstruction, setSavingConstruction] = useState(false);
+
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryColor, setNewCategoryColor] = useState("#a855f7");
+  const [savingCategoryId, setSavingCategoryId] = useState("");
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   const canEdit = useMemo(() => {
     const role = String(profile?.role || "").toLowerCase();
@@ -153,6 +307,12 @@ export default function ObjectMapPage() {
     });
     return map;
   }, [constructionStates]);
+
+  const customCategories = useMemo(() => {
+    return constructionCategories.filter(
+      (item) => String(item.type || "") === "custom"
+    );
+  }, [constructionCategories]);
 
   const planConstructions = useMemo(() => {
     if (Number(objectItem?.mapPlanConstructions || 0) > 0) {
@@ -178,25 +338,24 @@ export default function ObjectMapPage() {
     constructionNumbers.length,
   ]);
 
-  const constructedCount = useMemo(() => {
+  const doneConstructions = useMemo(() => {
     return constructionNumbers.filter((num) => {
       const item = constructionStatesMap.get(num);
-      const status = String(item?.status || "not_started");
-      return status !== "not_started";
+      return getFinalConstructionState(item) === "done";
+    }).length;
+  }, [constructionNumbers, constructionStatesMap]);
+
+  const workingConstructions = useMemo(() => {
+    return constructionNumbers.filter((num) => {
+      const item = constructionStatesMap.get(num);
+      return getFinalConstructionState(item) === "in_progress";
     }).length;
   }, [constructionNumbers, constructionStatesMap]);
 
   const panelsNotWrappedConstructions = useMemo(() => {
     return constructionNumbers.filter((num) => {
       const item = constructionStatesMap.get(num);
-      return String(item?.status || "") === "panels_installed_not_wrapped";
-    }).length;
-  }, [constructionNumbers, constructionStatesMap]);
-
-  const doneConstructions = useMemo(() => {
-    return constructionNumbers.filter((num) => {
-      const item = constructionStatesMap.get(num);
-      return String(item?.status || "") === "done";
+      return String(item?.panelStatus || "") === "installed_not_wrapped";
     }).length;
   }, [constructionNumbers, constructionStatesMap]);
 
@@ -258,8 +417,8 @@ export default function ObjectMapPage() {
         if (!objectSnap.exists()) {
           setMsg("Объект не найден.");
           setObjectItem(null);
-          setMarkers([]);
           setConstructionStates([]);
+          setConstructionCategories(mergeCategories([]));
           return;
         }
 
@@ -268,8 +427,8 @@ export default function ObjectMapPage() {
         if (role === "worker" && !visibleForWorker(obj, user.uid)) {
           setMsg("У тебя нет доступа к карте этого объекта.");
           setObjectItem(null);
-          setMarkers([]);
           setConstructionStates([]);
+          setConstructionCategories(mergeCategories([]));
           return;
         }
 
@@ -279,8 +438,8 @@ export default function ObjectMapPage() {
         setPlanConstructionsInput(String(obj.mapPlanConstructions || ""));
 
         await Promise.all([
-          loadMarkers(String(id)),
           loadConstructionStates(String(id)),
+          loadConstructionCategories(String(id), role === "director" || role === "admin"),
         ]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки карты объекта");
@@ -291,22 +450,6 @@ export default function ObjectMapPage() {
 
     return () => unsub();
   }, [router, id]);
-
-  async function loadMarkers(objectId) {
-    const snap = await getDocs(collection(db, "Objects", objectId, "MapMarkers"));
-    const list = snap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-
-    list.sort((a, b) => {
-      const aSec = a?.createdAt?.seconds || 0;
-      const bSec = b?.createdAt?.seconds || 0;
-      return aSec - bSec;
-    });
-
-    setMarkers(list);
-  }
 
   async function loadConstructionStates(objectId) {
     const snap = await getDocs(
@@ -322,19 +465,35 @@ export default function ObjectMapPage() {
     setConstructionStates(list);
   }
 
-  function clearMarkerForm() {
-    setEditingMarkerId("");
-    setMarkerLabel("");
-    setMarkerType("custom");
-    setMarkerColor("#ff9800");
-    setMarkerPanelsCount("");
-    setMarkerConstructionsCount("");
-    setMarkerNote("");
-    setPendingPos(null);
+  async function loadConstructionCategories(objectId, shouldSeed) {
+    const colRef = collection(db, "Objects", objectId, "ConstructionCategories");
+    let snap = await getDocs(colRef);
+
+    if (snap.empty && shouldSeed) {
+      for (const item of BASE_CATEGORY_DEFAULTS) {
+        await setDoc(doc(db, "Objects", objectId, "ConstructionCategories", item.id), {
+          code: item.code,
+          name: item.name,
+          color: item.color,
+          type: item.type,
+          sortOrder: item.sortOrder,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      snap = await getDocs(colRef);
+    }
+
+    const list = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    setConstructionCategories(mergeCategories(list));
   }
 
   async function handleUploadMapFile() {
     if (!canEdit || !objectItem?.id) return;
+
     if (!mapFile) {
       setMsg("Сначала выбери файл схемы.");
       return;
@@ -395,113 +554,16 @@ export default function ObjectMapPage() {
     }
   }
 
-  function handleImageClick(e) {
-    if (!canEdit || !editMode) return;
-    if (!objectItem?.mapImageUrl) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-    setPendingPos({
-      x: Math.max(0, Math.min(100, x)),
-      y: Math.max(0, Math.min(100, y)),
-    });
-  }
-
-  async function handleSaveMarker() {
-    if (!canEdit || !objectItem?.id) return;
-
-    setMsg("");
-
-    if (!editingMarkerId && !pendingPos) {
-      setMsg("Сначала кликни по схеме, чтобы выбрать место для новой маркировки.");
-      return;
-    }
-
-    if (!String(markerLabel || "").trim()) {
-      setMsg("Укажи название маркировки.");
-      return;
-    }
-
-    try {
-      let markerId = editingMarkerId;
-      let x = pendingPos?.x;
-      let y = pendingPos?.y;
-
-      if (editingMarkerId) {
-        const existing = markers.find((m) => m.id === editingMarkerId);
-        if (existing) {
-          x = Number(existing.x);
-          y = Number(existing.y);
-        }
-      } else {
-        markerId = doc(collection(db, "Objects", objectItem.id, "MapMarkers")).id;
-      }
-
-      await setDoc(
-        doc(db, "Objects", objectItem.id, "MapMarkers", markerId),
-        {
-          label: String(markerLabel).trim(),
-          type: String(markerType || "custom"),
-          color: String(markerColor || "#ff9800"),
-          x: Number(x || 0),
-          y: Number(y || 0),
-          panelsCount: Number(markerPanelsCount || 0),
-          constructionsCount: Number(markerConstructionsCount || 0),
-          note: String(markerNote || "").trim(),
-          updatedAt: serverTimestamp(),
-          ...(editingMarkerId ? {} : { createdAt: serverTimestamp() }),
-        },
-        { merge: true }
-      );
-
-      await loadMarkers(objectItem.id);
-      clearMarkerForm();
-      setMsg("Маркировка сохранена.");
-    } catch (e) {
-      setMsg(e?.message || "Ошибка сохранения маркировки");
-    }
-  }
-
-  function handleEditMarker(marker) {
-    setEditingMarkerId(marker.id);
-    setMarkerLabel(String(marker.label || ""));
-    setMarkerType(String(marker.type || "custom"));
-    setMarkerColor(String(marker.color || "#ff9800"));
-    setMarkerPanelsCount(String(marker.panelsCount || 0));
-    setMarkerConstructionsCount(String(marker.constructionsCount || 0));
-    setMarkerNote(String(marker.note || ""));
-    setPendingPos({
-      x: Number(marker.x || 0),
-      y: Number(marker.y || 0),
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  async function handleDeleteMarker(markerId) {
-    if (!canEdit || !objectItem?.id) return;
-
-    setMsg("");
-    try {
-      await deleteDoc(doc(db, "Objects", objectItem.id, "MapMarkers", markerId));
-      await loadMarkers(objectItem.id);
-
-      if (editingMarkerId === markerId) {
-        clearMarkerForm();
-      }
-
-      setMsg("Маркировка удалена.");
-    } catch (e) {
-      setMsg(e?.message || "Ошибка удаления маркировки");
-    }
-  }
-
   function handleSelectConstruction(number) {
-    setSelectedConstructionNumber(String(number));
+    const num = Number(number);
+    const current = constructionStatesMap.get(num);
 
-    const current = constructionStatesMap.get(Number(number));
-    setConstructionStatus(String(current?.status || "not_started"));
+    setSelectedConstructionNumber(String(num));
+    setFrameStatus(String(current?.frameStatus || "not_started"));
+    setPanelStatus(String(current?.panelStatus || "not_started"));
+    setSelectedCustomCategoryIds(
+      Array.isArray(current?.customCategoryIds) ? current.customCategoryIds : []
+    );
   }
 
   async function handleSaveConstruction() {
@@ -522,7 +584,11 @@ export default function ObjectMapPage() {
         doc(db, "Objects", objectItem.id, "ConstructionStates", String(num)),
         {
           number: num,
-          status: String(constructionStatus || "not_started"),
+          frameStatus: String(frameStatus || "not_started"),
+          panelStatus: String(panelStatus || "not_started"),
+          customCategoryIds: Array.isArray(selectedCustomCategoryIds)
+            ? selectedCustomCategoryIds
+            : [],
           updatedAt: serverTimestamp(),
           updatedBy: profile?.uid || null,
         },
@@ -530,9 +596,9 @@ export default function ObjectMapPage() {
       );
 
       await loadConstructionStates(objectItem.id);
-      setMsg("Статус конструкции сохранён.");
+      setMsg("Состояние конструкции сохранено.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка сохранения статуса конструкции");
+      setMsg(e?.message || "Ошибка сохранения конструкции");
     } finally {
       setSavingConstruction(false);
     }
@@ -557,29 +623,142 @@ export default function ObjectMapPage() {
       );
 
       await loadConstructionStates(objectItem.id);
-      setConstructionStatus("not_started");
-      setMsg("Статус конструкции сброшен.");
+      setFrameStatus("not_started");
+      setPanelStatus("not_started");
+      setSelectedCustomCategoryIds([]);
+      setMsg("Состояние конструкции сброшено.");
     } catch (e) {
-      setMsg(e?.message || "Ошибка сброса статуса конструкции");
+      setMsg(e?.message || "Ошибка сброса конструкции");
     } finally {
       setSavingConstruction(false);
     }
   }
 
-  const installedPanelsByMarkers = useMemo(() => {
-    return markers.reduce((sum, item) => sum + Number(item.panelsCount || 0), 0);
-  }, [markers]);
-
-  const installedConstructionsByMarkers = useMemo(() => {
-    return markers.reduce(
-      (sum, item) => sum + Number(item.constructionsCount || 0),
-      0
+  function toggleCustomCategory(categoryId) {
+    setSelectedCustomCategoryIds((prev) =>
+      prev.includes(categoryId)
+        ? prev.filter((item) => item !== categoryId)
+        : [...prev, categoryId]
     );
-  }, [markers]);
+  }
 
-  const selectedConstructionMeta = useMemo(() => {
-    return getConstructionStatusMeta(constructionStatus);
-  }, [constructionStatus]);
+  function updateCategoryLocal(categoryId, patch) {
+    setConstructionCategories((prev) =>
+      prev.map((item) =>
+        item.id === categoryId
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item
+      )
+    );
+  }
+
+  async function handleSaveCategory(category) {
+    if (!canEdit || !objectItem?.id) return;
+
+    setSavingCategoryId(category.id);
+    setMsg("");
+
+    try {
+      await setDoc(
+        doc(db, "Objects", objectItem.id, "ConstructionCategories", category.id),
+        {
+          code: category.code || null,
+          name: String(category.name || "").trim(),
+          color: String(category.color || "#a855f7"),
+          type: String(category.type || "custom"),
+          sortOrder: Number(category.sortOrder || 999),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      await loadConstructionCategories(objectItem.id, false);
+      setMsg("Маркировка сохранена.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка сохранения маркировки");
+    } finally {
+      setSavingCategoryId("");
+    }
+  }
+
+  async function handleDeleteCategory(category) {
+    if (!canEdit || !objectItem?.id) return;
+    if (String(category.type || "") !== "custom") return;
+
+    const yes = window.confirm(`Удалить категорию "${category.name}"?`);
+    if (!yes) return;
+
+    setSavingCategoryId(category.id);
+    setMsg("");
+
+    try {
+      await deleteDoc(
+        doc(db, "Objects", objectItem.id, "ConstructionCategories", category.id)
+      );
+
+      setSelectedCustomCategoryIds((prev) =>
+        prev.filter((item) => item !== category.id)
+      );
+
+      await loadConstructionCategories(objectItem.id, false);
+      setMsg("Категория удалена.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка удаления категории");
+    } finally {
+      setSavingCategoryId("");
+    }
+  }
+
+  async function handleCreateCategory() {
+    if (!canEdit || !objectItem?.id) return;
+
+    const name = String(newCategoryName || "").trim();
+    if (!name) {
+      setMsg("Укажи название новой категории.");
+      return;
+    }
+
+    setCreatingCategory(true);
+    setMsg("");
+
+    try {
+      const newRef = doc(
+        collection(db, "Objects", objectItem.id, "ConstructionCategories")
+      );
+
+      await setDoc(newRef, {
+        code: null,
+        name,
+        color: String(newCategoryColor || "#a855f7"),
+        type: "custom",
+        sortOrder: 1000 + Date.now(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setNewCategoryName("");
+      setNewCategoryColor("#a855f7");
+      await loadConstructionCategories(objectItem.id, false);
+      setMsg("Новая категория добавлена.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка добавления категории");
+    } finally {
+      setCreatingCategory(false);
+    }
+  }
+
+  const selectedConstructionVisual = useMemo(() => {
+    return getCardVisual(
+      {
+        frameStatus,
+        panelStatus,
+        customCategoryIds: selectedCustomCategoryIds,
+      },
+      constructionCategories
+    );
+  }, [frameStatus, panelStatus, selectedCustomCategoryIds, constructionCategories]);
 
   if (loading) {
     return (
@@ -613,14 +792,7 @@ export default function ObjectMapPage() {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-            marginTop: 12,
-          }}
-        >
+        <div style={statsGridStyle}>
           <div style={statBoxStyle}>
             <div style={statLabelStyle}>План панелей</div>
             <div style={statValueStyle}>{planPanels}</div>
@@ -642,43 +814,13 @@ export default function ObjectMapPage() {
           </div>
 
           <div style={statBoxStyle}>
-            <div style={statLabelStyle}>Конструкции начаты</div>
-            <div style={statValueStyle}>{constructedCount}</div>
+            <div style={statLabelStyle}>Конструкции в работе</div>
+            <div style={statValueStyle}>{workingConstructions}</div>
           </div>
 
           <div style={statBoxStyle}>
             <div style={statLabelStyle}>Конструкции готово</div>
             <div style={statValueStyle}>{doneConstructions}</div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            marginTop: 14,
-            padding: 12,
-            borderRadius: 14,
-            background: "rgba(255,255,255,0.72)",
-            border: "1px solid rgba(15,23,42,0.08)",
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          <div>
-            <b>Диапазон конструкций:</b>{" "}
-            {constructionNumbers.length
-              ? `${constructionNumbers[0]} – ${
-                  constructionNumbers[constructionNumbers.length - 1]
-                }`
-              : "-"}
-          </div>
-          <div>
-            <b>Панелей на конструкцию:</b>{" "}
-            {Number(objectItem?.panelsPerConstruction || 0)}
-          </div>
-          <div style={{ marginTop: 6, opacity: 0.8 }}>
-            Старые ручные маркировки на карте оставлены. Новый блок
-            <b> “Карта конструкций” </b>
-            уже работает отдельно и будет основой для дальнейшей динамики.
           </div>
         </div>
 
@@ -736,7 +878,7 @@ export default function ObjectMapPage() {
                   min="0"
                   value={planConstructionsInput}
                   onChange={(e) => setPlanConstructionsInput(e.target.value)}
-                  placeholder="Например: 300"
+                  placeholder="Например: 96"
                 />
               </div>
             </div>
@@ -749,14 +891,6 @@ export default function ObjectMapPage() {
               >
                 Сохранить настройки карты
               </button>
-
-              <button
-                className={s.secondaryBtn}
-                type="button"
-                onClick={() => setEditMode((v) => !v)}
-              >
-                {editMode ? "Выключить режим разметки" : "Включить режим разметки"}
-              </button>
             </div>
           </div>
         ) : null}
@@ -764,46 +898,12 @@ export default function ObjectMapPage() {
         {objectItem.mapImageUrl ? (
           <div className={s.mapWrap}>
             <div className={s.sectionTitle}>Схема объекта</div>
-
-            {canEdit && editMode ? (
-              <div className={s.helpText}>
-                Кликни по схеме, чтобы выбрать место для новой маркировки.
-              </div>
-            ) : null}
-
-            <div className={s.mapStage} onClick={handleImageClick}>
+            <div className={s.mapStage}>
               <img
                 src={objectItem.mapImageUrl}
                 alt={objectItem.name || objectItem.id}
                 className={s.mapImage}
               />
-
-              {markers.map((marker) => (
-                <div
-                  key={marker.id}
-                  className={s.marker}
-                  style={{
-                    left: `${Number(marker.x || 0)}%`,
-                    top: `${Number(marker.y || 0)}%`,
-                    background: String(marker.color || "#ff9800"),
-                  }}
-                  title={`${marker.label || ""} | Панели: ${
-                    marker.panelsCount || 0
-                  } | Конструкции: ${marker.constructionsCount || 0}`}
-                >
-                  <span className={s.markerText}>{marker.label || "M"}</span>
-                </div>
-              ))}
-
-              {canEdit && editMode && pendingPos ? (
-                <div
-                  className={s.pendingMarker}
-                  style={{
-                    left: `${Number(pendingPos.x || 0)}%`,
-                    top: `${Number(pendingPos.y || 0)}%`,
-                  }}
-                />
-              ) : null}
             </div>
           </div>
         ) : (
@@ -813,43 +913,118 @@ export default function ObjectMapPage() {
         <div style={constructionSectionStyle}>
           <div style={sectionTitleStyle}>Карта конструкций</div>
 
+          <div style={legendBlockStyle}>
+            <div style={legendTitleStyle}>Маркировки карты конструкций</div>
+
+            <div style={legendListStyle}>
+              <div style={fixedLegendCardStyle}>
+                <span style={legendColorBox("#94a3b8")} />
+                <span>Не начато</span>
+              </div>
+
+              {constructionCategories.map((item) => (
+                <div key={item.id} style={fixedLegendCardStyle}>
+                  <span style={legendColorBox(item.color || "#94a3b8")} />
+                  <span>{item.name || "-"}</span>
+                </div>
+              ))}
+
+              <div style={fixedLegendCardStyle}>
+                <span style={legendColorBox("#22c55e")} />
+                <span>Готово</span>
+              </div>
+            </div>
+
+            {canEdit ? (
+              <div style={categoryEditorWrapStyle}>
+                <div style={editorTitleStyle}>Редактирование маркировок</div>
+
+                {constructionCategories.map((item) => (
+                  <div key={item.id} style={categoryRowStyle}>
+                    <input
+                      value={item.name || ""}
+                      onChange={(e) =>
+                        updateCategoryLocal(item.id, { name: e.target.value })
+                      }
+                      style={categoryNameInputStyle}
+                      placeholder="Название категории"
+                    />
+
+                    <input
+                      type="color"
+                      value={item.color || "#94a3b8"}
+                      onChange={(e) =>
+                        updateCategoryLocal(item.id, { color: e.target.value })
+                      }
+                      style={categoryColorInputStyle}
+                    />
+
+                    <button
+                      type="button"
+                      className={s.smallBtn}
+                      onClick={() => handleSaveCategory(item)}
+                      disabled={savingCategoryId === item.id}
+                    >
+                      {savingCategoryId === item.id ? "..." : "Сохранить"}
+                    </button>
+
+                    {String(item.type || "") === "custom" ? (
+                      <button
+                        type="button"
+                        className={s.smallDangerBtn}
+                        onClick={() => handleDeleteCategory(item)}
+                        disabled={savingCategoryId === item.id}
+                      >
+                        Удалить
+                      </button>
+                    ) : (
+                      <span style={baseCategoryTagStyle}>Базовая</span>
+                    )}
+                  </div>
+                ))}
+
+                <div style={newCategoryBoxStyle}>
+                  <div style={editorTitleStyle}>Добавить новую категорию</div>
+
+                  <div style={categoryRowStyle}>
+                    <input
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      style={categoryNameInputStyle}
+                      placeholder="Например: Проверка, Доработка, Ожидание"
+                    />
+
+                    <input
+                      type="color"
+                      value={newCategoryColor}
+                      onChange={(e) => setNewCategoryColor(e.target.value)}
+                      style={categoryColorInputStyle}
+                    />
+
+                    <button
+                      type="button"
+                      className={s.primaryBtn}
+                      onClick={handleCreateCategory}
+                      disabled={creatingCategory}
+                    >
+                      {creatingCategory ? "Добавление..." : "Добавить"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           {constructionNumbers.length === 0 ? (
-            <div style={{ opacity: 0.75 }}>
-              Для этого объекта ещё не задан диапазон конструкций. Задай его в
-              кабинете директора в разделе объектов.
+            <div style={{ opacity: 0.75, marginTop: 14 }}>
+              Для этого объекта ещё не задан диапазон конструкций.
             </div>
           ) : (
             <>
-              <div style={legendWrapStyle}>
-                {[
-                  "not_started",
-                  "frame_done",
-                  "panels_installed_not_wrapped",
-                  "done",
-                ].map((status) => {
-                  const meta = getConstructionStatusMeta(status);
-                  return (
-                    <div key={status} style={legendItemStyle}>
-                      <span
-                        style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: 4,
-                          background: meta.background,
-                          border: `1px solid ${meta.border}`,
-                          display: "inline-block",
-                        }}
-                      />
-                      <span>{meta.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
               <div style={constructionGridStyle}>
                 {constructionNumbers.map((num) => {
                   const current = constructionStatesMap.get(num);
-                  const meta = getConstructionStatusMeta(current?.status);
+                  const visual = getCardVisual(current, constructionCategories);
                   const active = String(selectedConstructionNumber) === String(num);
 
                   return (
@@ -858,73 +1033,126 @@ export default function ObjectMapPage() {
                       type="button"
                       onClick={() => handleSelectConstruction(num)}
                       style={{
-                        ...constructionCellStyle,
-                        background: meta.background,
-                        border: `1px solid ${active ? meta.color : meta.border}`,
+                        ...constructionCardStyle,
+                        background: visual.background,
+                        border: `1px solid ${active ? visual.accent : visual.border}`,
                         boxShadow: active
-                          ? `0 0 0 2px ${meta.color}33`
+                          ? `0 0 0 2px ${visual.accent}33`
                           : "none",
                       }}
-                      title={`${num} — ${meta.label}`}
                     >
                       <div style={constructionNumberStyle}>{num}</div>
-                      <div style={constructionStatusStyle}>{meta.label}</div>
+                      <div style={constructionShortStatusStyle}>{visual.label}</div>
                     </button>
                   );
                 })}
               </div>
 
               <div style={constructionEditorStyle}>
-                <div style={{ fontWeight: 800, marginBottom: 10 }}>
+                <div style={{ fontWeight: 900, marginBottom: 12 }}>
                   {selectedConstructionNumber
                     ? `Выбрана конструкция № ${selectedConstructionNumber}`
-                    : "Выбери конструкцию из списка выше"}
+                    : "Выбери конструкцию"}
                 </div>
 
-                <div style={editorRowStyle}>
-                  <div style={{ minWidth: 220 }}>
+                <div style={editorGridStyle}>
+                  <div>
                     <label style={miniLabelStyle}>Статус конструкции</label>
                     <select
-                      value={constructionStatus}
-                      onChange={(e) => setConstructionStatus(e.target.value)}
+                      value={frameStatus}
+                      onChange={(e) => setFrameStatus(e.target.value)}
                       disabled={!canEdit || !selectedConstructionNumber}
                       style={editorInputStyle}
                     >
                       <option value="not_started">Не начато</option>
-                      <option value="frame_done">Конструкция собрана</option>
-                      <option value="panels_installed_not_wrapped">
-                        Панели установлены, не обтянуты
+                      <option value="built_not_wrapped">
+                        {getCategoryByCode(constructionCategories, "frame_built_not_wrapped")
+                          ?.name || "Конструкция собрана, не обтянута"}
                       </option>
-                      <option value="done">Готово</option>
+                      <option value="built">
+                        {getCategoryByCode(constructionCategories, "frame_built")?.name ||
+                          "Конструкция собрана"}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={miniLabelStyle}>Статус панелей</label>
+                    <select
+                      value={panelStatus}
+                      onChange={(e) => setPanelStatus(e.target.value)}
+                      disabled={!canEdit || !selectedConstructionNumber}
+                      style={editorInputStyle}
+                    >
+                      <option value="not_started">Не начато</option>
+                      <option value="installed_not_wrapped">
+                        {getCategoryByCode(
+                          constructionCategories,
+                          "panel_installed_not_wrapped"
+                        )?.name || "Панели установлены, не обтянуты"}
+                      </option>
+                      <option value="wrapped">
+                        {getCategoryByCode(constructionCategories, "panel_wrapped")?.name ||
+                          "Панели обтянуты"}
+                      </option>
                     </select>
                   </div>
 
                   <div
                     style={{
-                      padding: "12px 14px",
+                      padding: 12,
                       borderRadius: 12,
-                      background: selectedConstructionMeta.background,
-                      border: `1px solid ${selectedConstructionMeta.border}`,
-                      color: selectedConstructionMeta.color,
-                      fontWeight: 700,
-                      minWidth: 220,
+                      background: selectedConstructionVisual.background,
+                      border: `1px solid ${selectedConstructionVisual.border}`,
+                      color: selectedConstructionVisual.accent,
+                      fontWeight: 800,
+                      minHeight: 46,
+                      display: "flex",
+                      alignItems: "center",
                     }}
                   >
-                    Текущий выбор: {selectedConstructionMeta.label}
+                    Итог: {selectedConstructionVisual.label}
                   </div>
                 </div>
 
+                {customCategories.length > 0 ? (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={miniLabelStyle}>Дополнительные категории</div>
+
+                    <div style={customCategoryWrapStyle}>
+                      {customCategories.map((item) => (
+                        <label key={item.id} style={customCategoryItemStyle}>
+                          <input
+                            type="checkbox"
+                            checked={selectedCustomCategoryIds.includes(item.id)}
+                            onChange={() => toggleCustomCategory(item.id)}
+                            disabled={!canEdit || !selectedConstructionNumber}
+                          />
+                          <span
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: 4,
+                              background: item.color || "#a855f7",
+                              display: "inline-block",
+                            }}
+                          />
+                          <span>{item.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {canEdit ? (
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
                     <button
                       type="button"
                       className={s.primaryBtn}
                       onClick={handleSaveConstruction}
                       disabled={savingConstruction || !selectedConstructionNumber}
                     >
-                      {savingConstruction
-                        ? "Сохранение..."
-                        : "Сохранить статус конструкции"}
+                      {savingConstruction ? "Сохранение..." : "Сохранить"}
                     </button>
 
                     <button
@@ -933,177 +1161,17 @@ export default function ObjectMapPage() {
                       onClick={handleResetConstruction}
                       disabled={savingConstruction || !selectedConstructionNumber}
                     >
-                      Сбросить статус
+                      Сбросить
                     </button>
                   </div>
                 ) : (
-                  <div style={{ marginTop: 10, opacity: 0.75 }}>
-                    Работник сейчас видит карту конструкций только для просмотра.
+                  <div style={{ marginTop: 12, opacity: 0.75 }}>
+                    Работник пока видит карту конструкций только для просмотра.
                   </div>
                 )}
               </div>
             </>
           )}
-        </div>
-
-        {canEdit ? (
-          <div className={s.editorBox}>
-            <div className={s.sectionTitle}>
-              {editingMarkerId ? "Редактирование маркировки" : "Новая маркировка"}
-            </div>
-
-            <div className={s.row2}>
-              <div>
-                <label className={s.label}>Название маркировки</label>
-                <input
-                  className={s.input}
-                  value={markerLabel}
-                  onChange={(e) => setMarkerLabel(e.target.value)}
-                  placeholder="Например: Линия 3 / Ряд 5"
-                />
-              </div>
-
-              <div>
-                <label className={s.label}>Тип</label>
-                <select
-                  className={s.input}
-                  value={markerType}
-                  onChange={(e) => setMarkerType(e.target.value)}
-                >
-                  <option value="custom">Своя маркировка</option>
-                  <option value="panels">Панели</option>
-                  <option value="constructions">Конструкции</option>
-                  <option value="mixed">Смешанная</option>
-                </select>
-              </div>
-            </div>
-
-            <div className={s.row2}>
-              <div>
-                <label className={s.label}>Цвет</label>
-                <input
-                  className={s.colorInput}
-                  type="color"
-                  value={markerColor}
-                  onChange={(e) => setMarkerColor(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className={s.label}>Панелей</label>
-                <input
-                  className={s.input}
-                  type="number"
-                  min="0"
-                  value={markerPanelsCount}
-                  onChange={(e) => setMarkerPanelsCount(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-            </div>
-
-            <div className={s.row2}>
-              <div>
-                <label className={s.label}>Конструкций</label>
-                <input
-                  className={s.input}
-                  type="number"
-                  min="0"
-                  value={markerConstructionsCount}
-                  onChange={(e) => setMarkerConstructionsCount(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-
-              <div>
-                <label className={s.label}>Примечание</label>
-                <input
-                  className={s.input}
-                  value={markerNote}
-                  onChange={(e) => setMarkerNote(e.target.value)}
-                  placeholder="Например: собрано, но не обтянуто"
-                />
-              </div>
-            </div>
-
-            <div className={s.rowButtons}>
-              <button className={s.primaryBtn} type="button" onClick={handleSaveMarker}>
-                {editingMarkerId ? "Сохранить маркировку" : "Добавить маркировку"}
-              </button>
-
-              <button className={s.secondaryBtn} type="button" onClick={clearMarkerForm}>
-                Очистить форму
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        <div className={s.listBox}>
-          <div className={s.sectionTitle}>Маркировки</div>
-
-          {markers.length === 0 ? (
-            <div className={s.emptyText}>Маркировок пока нет.</div>
-          ) : (
-            <div className={s.markerList}>
-              {markers.map((marker) => (
-                <div className={s.markerCard} key={marker.id}>
-                  <div className={s.markerCardTop}>
-                    <div className={s.markerCardLeft}>
-                      <span
-                        className={s.colorDot}
-                        style={{ background: String(marker.color || "#ff9800") }}
-                      />
-                      <div>
-                        <div className={s.markerName}>{marker.label || "-"}</div>
-                        <div className={s.markerMeta}>
-                          Тип: {marker.type || "-"} | Панели: {marker.panelsCount || 0} |
-                          Конструкции: {marker.constructionsCount || 0}
-                        </div>
-                        {marker.note ? (
-                          <div className={s.markerNote}>Примечание: {marker.note}</div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {canEdit ? (
-                      <div className={s.cardBtns}>
-                        <button
-                          className={s.smallBtn}
-                          type="button"
-                          onClick={() => handleEditMarker(marker)}
-                        >
-                          Изменить
-                        </button>
-                        <button
-                          className={s.smallDangerBtn}
-                          type="button"
-                          onClick={() => handleDeleteMarker(marker.id)}
-                        >
-                          Удалить
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            marginTop: 20,
-            padding: 14,
-            borderRadius: 14,
-            background: "rgba(255,255,255,0.72)",
-            border: "1px solid rgba(15,23,42,0.08)",
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Старые счётчики по маркировкам</div>
-          <div>Панели по ручным маркировкам: {installedPanelsByMarkers}</div>
-          <div>Конструкции по ручным маркировкам: {installedConstructionsByMarkers}</div>
         </div>
 
         {msg ? <div className={s.msg}>{msg}</div> : null}
@@ -1121,6 +1189,13 @@ export default function ObjectMapPage() {
     </main>
   );
 }
+
+const statsGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+  marginTop: 12,
+};
 
 const statBoxStyle = {
   borderRadius: 14,
@@ -1156,49 +1231,126 @@ const sectionTitleStyle = {
   marginBottom: 14,
 };
 
-const legendWrapStyle = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 10,
-  marginBottom: 14,
+const legendBlockStyle = {
+  borderRadius: 16,
+  padding: 14,
+  background: "rgba(248,250,252,0.92)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  marginBottom: 16,
 };
 
-const legendItemStyle = {
+const legendTitleStyle = {
+  fontSize: 16,
+  fontWeight: 900,
+  marginBottom: 10,
+};
+
+const legendListStyle = {
+  display: "grid",
+  gap: 10,
+};
+
+const fixedLegendCardStyle = {
   display: "inline-flex",
   alignItems: "center",
-  gap: 8,
-  padding: "8px 10px",
-  borderRadius: 12,
-  background: "rgba(248,250,252,0.95)",
+  gap: 12,
+  padding: "12px 14px",
+  borderRadius: 14,
+  background: "#fff",
   border: "1px solid rgba(15,23,42,0.08)",
-  fontSize: 13,
+  fontSize: 15,
+  fontWeight: 700,
+  maxWidth: 460,
+};
+
+function legendColorBox(color) {
+  return {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    background: hexToSoft(color),
+    border: `1px solid ${hexToBorder(color).replace("0.45", "0.65")}`,
+    display: "inline-block",
+    flexShrink: 0,
+  };
+}
+
+const categoryEditorWrapStyle = {
+  marginTop: 16,
+  paddingTop: 14,
+  borderTop: "1px solid rgba(15,23,42,0.08)",
+  display: "grid",
+  gap: 10,
+};
+
+const editorTitleStyle = {
+  fontSize: 14,
+  fontWeight: 900,
+};
+
+const categoryRowStyle = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const categoryNameInputStyle = {
+  flex: "1 1 260px",
+  minHeight: 44,
+  borderRadius: 12,
+  border: "1px solid rgba(15,23,42,0.16)",
+  background: "#fff",
+  padding: "0 12px",
+  outline: "none",
+};
+
+const categoryColorInputStyle = {
+  width: 52,
+  height: 44,
+  padding: 4,
+  borderRadius: 12,
+  border: "1px solid rgba(15,23,42,0.16)",
+  background: "#fff",
+};
+
+const baseCategoryTagStyle = {
+  fontSize: 12,
+  opacity: 0.7,
+  fontWeight: 700,
+};
+
+const newCategoryBoxStyle = {
+  marginTop: 8,
+  padding: 12,
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.72)",
+  border: "1px solid rgba(15,23,42,0.08)",
 };
 
 const constructionGridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-  gap: 10,
+  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+  gap: 12,
 };
 
-const constructionCellStyle = {
-  borderRadius: 14,
-  minHeight: 90,
-  padding: 10,
+const constructionCardStyle = {
+  minHeight: 112,
+  borderRadius: 16,
+  padding: 14,
   textAlign: "left",
   cursor: "pointer",
-  transition: "0.15s ease",
 };
 
 const constructionNumberStyle = {
-  fontSize: 20,
+  fontSize: 26,
   fontWeight: 900,
-  marginBottom: 8,
+  marginBottom: 16,
 };
 
-const constructionStatusStyle = {
-  fontSize: 12,
-  lineHeight: 1.3,
-  opacity: 0.9,
+const constructionShortStatusStyle = {
+  fontSize: 16,
+  fontWeight: 700,
 };
 
 const constructionEditorStyle = {
@@ -1209,10 +1361,10 @@ const constructionEditorStyle = {
   border: "1px solid rgba(15,23,42,0.08)",
 };
 
-const editorRowStyle = {
-  display: "flex",
+const editorGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 12,
-  flexWrap: "wrap",
   alignItems: "end",
 };
 
@@ -1225,11 +1377,27 @@ const miniLabelStyle = {
 
 const editorInputStyle = {
   width: "100%",
-  minWidth: 220,
-  height: 44,
+  minHeight: 44,
   borderRadius: 12,
   border: "1px solid rgba(15,23,42,0.18)",
   background: "#fff",
   padding: "0 12px",
   outline: "none",
+};
+
+const customCategoryWrapStyle = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const customCategoryItemStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "8px 10px",
+  borderRadius: 12,
+  background: "#fff",
+  border: "1px solid rgba(15,23,42,0.08)",
+  fontSize: 13,
 };
