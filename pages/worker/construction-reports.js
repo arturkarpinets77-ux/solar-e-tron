@@ -137,6 +137,13 @@ export default function WorkerConstructionReportsPage() {
     );
   }, [constructionCategories]);
 
+  const availableBrigades = useMemo(() => {
+    if (!selectedObjectId) return [];
+    return brigades.filter(
+      (item) => String(item.objectId || "") === String(selectedObjectId)
+    );
+  }, [brigades, selectedObjectId]);
+
   const selectedBrigade = useMemo(() => {
     return brigades.find((b) => b.id === selectedBrigadeId) || null;
   }, [brigades, selectedBrigadeId]);
@@ -213,6 +220,15 @@ export default function WorkerConstructionReportsPage() {
 
     loadSelectedObject(selectedObjectId);
   }, [selectedObjectId]);
+
+  useEffect(() => {
+    if (
+      selectedBrigadeId &&
+      !availableBrigades.some((item) => item.id === selectedBrigadeId)
+    ) {
+      setSelectedBrigadeId("");
+    }
+  }, [availableBrigades, selectedBrigadeId]);
 
   async function loadObjectsForWorker(workerUid) {
     try {
@@ -384,11 +400,25 @@ export default function WorkerConstructionReportsPage() {
       return;
     }
 
+    if (
+      reportMode === "brigade" &&
+      selectedBrigade &&
+      String(selectedBrigade.objectId || "") !== String(selectedObjectId)
+    ) {
+      setMsg("Эта бригада привязана к другому объекту.");
+      return;
+    }
+
     setSaving(true);
     try {
       const batch = writeBatch(db);
       const reportRef = doc(collection(db, "ConstructionReports"));
       const reportId = reportRef.id;
+
+      const mirrorTargets =
+        reportMode === "brigade" && Array.isArray(selectedBrigade?.memberUids)
+          ? selectedBrigade.memberUids
+          : [profile.uid];
 
       const reportPayload = {
         reportId,
@@ -400,10 +430,23 @@ export default function WorkerConstructionReportsPage() {
           reportMode === "brigade"
             ? String(selectedBrigade?.name || "")
             : null,
+        brigadeObjectId:
+          reportMode === "brigade"
+            ? String(selectedBrigade?.objectId || "")
+            : null,
+        brigadeObjectName:
+          reportMode === "brigade"
+            ? String(selectedBrigade?.objectName || "")
+            : null,
+        brigadeMemberUids:
+          reportMode === "brigade" && Array.isArray(selectedBrigade?.memberUids)
+            ? selectedBrigade.memberUids
+            : [],
         authorUid: profile.uid,
         authorName: profile.displayName,
         workerUid: reportMode === "personal" ? profile.uid : null,
         workerName: reportMode === "personal" ? profile.displayName : null,
+        mirrorUids: mirrorTargets,
         constructionNumbers: selectedConstructionNumbers,
         frameStatus,
         panelStatus,
@@ -442,11 +485,6 @@ export default function WorkerConstructionReportsPage() {
           { merge: true }
         );
       });
-
-      const mirrorTargets =
-        reportMode === "brigade" && Array.isArray(selectedBrigade?.memberUids)
-          ? selectedBrigade.memberUids
-          : [profile.uid];
 
       mirrorTargets.forEach((uid) => {
         const mirrorRef = doc(db, "Users", uid, "ConstructionReports", reportId);
@@ -540,12 +578,18 @@ export default function WorkerConstructionReportsPage() {
                   style={inputStyle}
                 >
                   <option value="">Выбери бригаду</option>
-                  {brigades.map((item) => (
+                  {availableBrigades.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name || item.id}
                     </option>
                   ))}
                 </select>
+
+                {selectedObjectId && availableBrigades.length === 0 ? (
+                  <div style={{ marginTop: 8, opacity: 0.8 }}>
+                    Для выбранного объекта у тебя нет привязанной бригады.
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
