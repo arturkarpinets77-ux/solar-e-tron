@@ -1023,29 +1023,51 @@ export default function ObjectMapPage() {
             <>
               <div style={constructionGridStyle}>
                 {constructionNumbers.map((num) => {
-                  const current = constructionStatesMap.get(num);
-                  const visual = getCardVisual(current, constructionCategories);
-                  const active = String(selectedConstructionNumber) === String(num);
+  const current = constructionStatesMap.get(num);
+  const visual = getCardVisual(current, constructionCategories);
+  const active = String(selectedConstructionNumber) === String(num);
 
-                  return (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => handleSelectConstruction(num)}
-                      style={{
-                        ...constructionCardStyle,
-                        background: visual.background,
-                        border: `1px solid ${active ? visual.accent : visual.border}`,
-                        boxShadow: active
-                          ? `0 0 0 2px ${visual.accent}33`
-                          : "none",
-                      }}
-                    >
-                      <div style={constructionNumberStyle}>{num}</div>
-                      <div style={constructionShortStatusStyle}>{visual.label}</div>
-                    </button>
-                  );
-                })}
+  const activeCustomCategories = customCategories.filter((cat) =>
+    Array.isArray(current?.customCategoryIds)
+      ? current.customCategoryIds.includes(cat.id)
+      : false
+  );
+
+  return (
+    <button
+      key={num}
+      type="button"
+      onClick={() => handleSelectConstruction(num)}
+      style={{
+        ...constructionCardStyle,
+        background: visual.background,
+        border: `1px solid ${active ? visual.accent : visual.border}`,
+        boxShadow: active
+          ? `0 0 0 2px ${visual.accent}33`
+          : "none",
+      }}
+    >
+      <div style={constructionNumberStyle}>{num}</div>
+
+      <div style={constructionShortStatusStyle}>{visual.label}</div>
+
+      {activeCustomCategories.length > 0 ? (
+        <div style={constructionDotsWrapStyle}>
+          {activeCustomCategories.map((cat) => (
+            <span
+              key={cat.id}
+              title={cat.name || ""}
+              style={{
+                ...constructionDotStyle,
+                background: cat.color || "#a855f7",
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+    </button>
+  );
+})}
               </div>
 
               <div style={constructionEditorStyle}>
@@ -1351,6 +1373,22 @@ const constructionNumberStyle = {
 const constructionShortStatusStyle = {
   fontSize: 16,
   fontWeight: 700,
+};
+
+const constructionDotsWrapStyle = {
+  display: "flex",
+  gap: 6,
+  flexWrap: "wrap",
+  marginTop: 12,
+};
+
+const constructionDotStyle = {
+  width: 12,
+  height: 12,
+  borderRadius: "50%",
+  display: "inline-block",
+  border: "1px solid rgba(15,23,42,0.18)",
+  boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
 };
 
 const constructionEditorStyle = {
