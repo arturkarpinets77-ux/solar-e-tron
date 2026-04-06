@@ -22,7 +22,7 @@ export default function WorkerIndexPage() {
   const [msg, setMsg] = useState("");
 
   const [profile, setProfile] = useState(null);
-  const [brigades, setBrigades] = useState([]);
+  const [workerBrigades, setWorkerBrigades] = useState([]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -90,20 +90,33 @@ export default function WorkerIndexPage() {
     const snap = await getDocs(q);
 
     const list = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => {
-        const aKey = `${a.objectName || ""} ${a.name || ""}`;
-        const bKey = `${b.objectName || ""} ${b.name || ""}`;
-        return aKey.localeCompare(bKey, "ru");
-      });
+      .map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+      .sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""), "ru")
+      );
 
-    setBrigades(list);
+    setWorkerBrigades(list);
   }
 
   function roleLabel(role) {
     const value = String(role || "").toLowerCase();
     if (value === "worker") return "Работник";
     return role || "-";
+  }
+
+  function brigadesLabel() {
+    if (!workerBrigades.length) return "Не назначен";
+
+    return workerBrigades
+      .map((item) => {
+        const brigadeName = String(item.name || item.id || "");
+        const objectName = String(item.objectName || item.objectId || "");
+        return objectName ? `${brigadeName} → ${objectName}` : brigadeName;
+      })
+      .join(" | ");
   }
 
   if (loading) {
@@ -157,21 +170,7 @@ export default function WorkerIndexPage() {
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Бригады:</span>
-            <span style={valueStyle}>
-              {brigades.length === 0 ? (
-                "Не назначен"
-              ) : (
-                <div style={{ display: "grid", gap: 6 }}>
-                  {brigades.map((item) => (
-                    <div key={item.id}>
-                      <b>{item.name || item.id}</b>
-                      {" — "}
-                      {item.objectName || item.objectId || "Без объекта"}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </span>
+            <span style={valueStyle}>{brigadesLabel()}</span>
           </div>
         </div>
 
