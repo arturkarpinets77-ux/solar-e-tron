@@ -9,8 +9,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  query,
-  where,
 } from "firebase/firestore";
 
 import s from "../../styles/objectMap.module.css";
@@ -33,20 +31,11 @@ function formatDateTime(value) {
   }
 }
 
-function uniqById(list) {
-  const map = new Map();
-  list.forEach((item) => map.set(item.id, item));
-  return Array.from(map.values());
-}
-
 export default function WorkerConstructionReportsHistoryPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
-
-  const [profile, setProfile] = useState(null);
-  const [brigades, setBrigades] = useState([]);
   const [reports, setReports] = useState([]);
 
   const [modeFilter, setModeFilter] = useState("all");
@@ -110,19 +99,7 @@ export default function WorkerConstructionReportsHistoryPage() {
           return;
         }
 
-        const displayName =
-          `${userData.firstName || ""} ${userData.lastName || ""}`.trim() ||
-          userData.email ||
-          user.email ||
-          user.uid;
-
-        setProfile({
-          uid: user.uid,
-          displayName,
-        });
-
-        const brigadeList = await loadMyBrigades(user.uid);
-        await loadMyReports(user.uid, brigadeList);
+        await loadMyReports(user.uid);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки истории отчётов");
       } finally {
@@ -133,57 +110,21 @@ export default function WorkerConstructionReportsHistoryPage() {
     return () => unsub();
   }, [router]);
 
-  async function loadMyBrigades(uid) {
-    const q = query(
-      collection(db, "Brigades"),
-      where("memberUids", "array-contains", uid)
-    );
+  async function loadMyReports(uid) {
+    const snap = await getDocs(collection(db, "Users", uid, "ConstructionReports"));
 
-    const snap = await getDocs(q);
-    const list = snap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-
-    setBrigades(list);
-    return list;
-  }
-
-  async function loadMyReports(uid, brigadeList) {
-    const personalSnap = await getDocs(
-      query(collection(db, "ConstructionReports"), where("authorUid", "==", uid))
-    );
-
-    const personalList = personalSnap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-
-    const brigadeResults = [];
-
-    for (const brigade of brigadeList) {
-      const brigadeId = String(brigade.id || "");
-      if (!brigadeId) continue;
-
-      const snap = await getDocs(
-        query(collection(db, "ConstructionReports"), where("brigadeId", "==", brigadeId))
-      );
-
-      snap.docs.forEach((d) => {
-        brigadeResults.push({
-          id: d.id,
-          ...d.data(),
-        });
+    const list = snap.docs
+      .map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+      .sort((a, b) => {
+        const aSec = Number(a?.createdAt?.seconds || 0);
+        const bSec = Number(b?.createdAt?.seconds || 0);
+        return bSec - aSec;
       });
-    }
 
-    const merged = uniqById([...personalList, ...brigadeResults]).sort((a, b) => {
-      const aSec = Number(a?.createdAt?.seconds || 0);
-      const bSec = Number(b?.createdAt?.seconds || 0);
-      return bSec - aSec;
-    });
-
-    setReports(merged);
+    setReports(list);
   }
 
   function modeLabel(mode) {
