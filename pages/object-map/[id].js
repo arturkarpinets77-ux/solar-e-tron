@@ -124,6 +124,32 @@ function getCategoryByCode(categories, code) {
   return categories.find((item) => item.code === code) || null;
 }
 
+function hexToRgb(hex) {
+  const raw = String(hex || "").replace("#", "").trim();
+  if (raw.length !== 6) return null;
+
+  const bigint = parseInt(raw, 16);
+  if (Number.isNaN(bigint)) return null;
+
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255,
+  };
+}
+
+function hexToSoft(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return "rgba(148,163,184,0.12)";
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.14)`;
+}
+
+function hexToBorder(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return "rgba(148,163,184,0.35)";
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`;
+}
+
 function getFinalConstructionState(item) {
   const frameStatus = String(item?.frameStatus || "not_started");
   const panelStatus = String(item?.panelStatus || "not_started");
@@ -158,46 +184,6 @@ function getCardVisual(item, categories) {
     };
   }
 
-  function getConstructionSplitVisual(item, categories) {
-  const summary = getCardVisual(item, categories);
-  const finalState = getFinalConstructionState(item);
-
-  if (finalState === "done" || finalState === "not_started") {
-    return {
-      ...summary,
-      topBackground: summary.background,
-      bottomBackground: summary.background,
-    };
-  }
-
-  let frameColor = "#94a3b8";
-  let panelColor = "#94a3b8";
-
-  const frameStatus = String(item?.frameStatus || "not_started");
-  const panelStatus = String(item?.panelStatus || "not_started");
-
-  if (frameStatus === "built_not_wrapped") {
-    frameColor =
-      getCategoryByCode(categories, "frame_built_not_wrapped")?.color || "#3b82f6";
-  } else if (frameStatus === "built") {
-    frameColor =
-      getCategoryByCode(categories, "frame_built")?.color || "#2563eb";
-  }
-
-  if (panelStatus === "installed_not_wrapped") {
-    panelColor =
-      getCategoryByCode(categories, "panel_installed_not_wrapped")?.color || "#f59e0b";
-  } else if (panelStatus === "wrapped") {
-    panelColor =
-      getCategoryByCode(categories, "panel_wrapped")?.color || "#14b8a6";
-  }
-
-  return {
-    ...summary,
-    topBackground: hexToSoft(frameColor),
-    bottomBackground: hexToSoft(panelColor),
-  };
-}
   if (finalState === "not_started") {
     return {
       label: "Не начато",
@@ -271,29 +257,42 @@ function getCardVisual(item, categories) {
   };
 }
 
-function hexToSoft(hex) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return "rgba(148,163,184,0.12)";
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.14)`;
-}
+function getConstructionSplitVisual(item, categories) {
+  const summary = getCardVisual(item, categories);
+  const finalState = getFinalConstructionState(item);
 
-function hexToBorder(hex) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return "rgba(148,163,184,0.35)";
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`;
-}
+  if (finalState === "done" || finalState === "not_started") {
+    return {
+      ...summary,
+      topBackground: summary.background,
+      bottomBackground: summary.background,
+    };
+  }
 
-function hexToRgb(hex) {
-  const raw = String(hex || "").replace("#", "").trim();
-  if (raw.length !== 6) return null;
+  let frameColor = "#94a3b8";
+  let panelColor = "#94a3b8";
 
-  const bigint = parseInt(raw, 16);
-  if (Number.isNaN(bigint)) return null;
+  const frameStatus = String(item?.frameStatus || "not_started");
+  const panelStatus = String(item?.panelStatus || "not_started");
+
+  if (frameStatus === "built_not_wrapped") {
+    frameColor =
+      getCategoryByCode(categories, "frame_built_not_wrapped")?.color || "#3b82f6";
+  } else if (frameStatus === "built") {
+    frameColor = getCategoryByCode(categories, "frame_built")?.color || "#2563eb";
+  }
+
+  if (panelStatus === "installed_not_wrapped") {
+    panelColor =
+      getCategoryByCode(categories, "panel_installed_not_wrapped")?.color || "#f59e0b";
+  } else if (panelStatus === "wrapped") {
+    panelColor = getCategoryByCode(categories, "panel_wrapped")?.color || "#14b8a6";
+  }
 
   return {
-    r: (bigint >> 16) & 255,
-    g: (bigint >> 8) & 255,
-    b: bigint & 255,
+    ...summary,
+    topBackground: hexToSoft(frameColor),
+    bottomBackground: hexToSoft(panelColor),
   };
 }
 
@@ -1063,68 +1062,76 @@ export default function ObjectMapPage() {
             <>
               <div style={constructionGridStyle}>
                 {constructionNumbers.map((num) => {
-  const current = constructionStatesMap.get(num);
-  const visual = getCardVisual(current, constructionCategories);
-  const splitVisual = getConstructionSplitVisual(current, constructionCategories);
-  const active = String(selectedConstructionNumber) === String(num);
+                  const current = constructionStatesMap.get(num);
+                  const visual = getCardVisual(current, constructionCategories);
+                  const splitVisual = getConstructionSplitVisual(
+                    current,
+                    constructionCategories
+                  );
+                  const active =
+                    String(selectedConstructionNumber) === String(num);
 
-  const activeCustomCategories = customCategories.filter((cat) =>
-    Array.isArray(current?.customCategoryIds)
-      ? current.customCategoryIds.includes(cat.id)
-      : false
-  );
+                  const activeCustomCategories = customCategories.filter((cat) =>
+                    Array.isArray(current?.customCategoryIds)
+                      ? current.customCategoryIds.includes(cat.id)
+                      : false
+                  );
 
-  return (
-    <button
-      key={num}
-      type="button"
-      onClick={() => handleSelectConstruction(num)}
-      style={{
-        ...constructionCardStyle,
-        border: `1px solid ${active ? visual.accent : visual.border}`,
-        boxShadow: active
-          ? `0 0 0 2px ${visual.accent}33`
-          : "none",
-      }}
-    >
-      <div style={constructionSplitLayerStyle}>
-        <div
-          style={{
-            ...constructionSplitTopStyle,
-            background: splitVisual.topBackground,
-          }}
-        />
-        <div
-          style={{
-            ...constructionSplitBottomStyle,
-            background: splitVisual.bottomBackground,
-          }}
-        />
-      </div>
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleSelectConstruction(num)}
+                      style={{
+                        ...constructionCardStyle,
+                        border: `1px solid ${
+                          active ? visual.accent : visual.border
+                        }`,
+                        boxShadow: active
+                          ? `0 0 0 2px ${visual.accent}33`
+                          : "none",
+                      }}
+                    >
+                      <div style={constructionSplitLayerStyle}>
+                        <div
+                          style={{
+                            ...constructionSplitTopStyle,
+                            background: splitVisual.topBackground,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...constructionSplitBottomStyle,
+                            background: splitVisual.bottomBackground,
+                          }}
+                        />
+                      </div>
 
-      <div style={constructionCardContentStyle}>
-        <div style={constructionNumberStyle}>{num}</div>
+                      <div style={constructionCardContentStyle}>
+                        <div style={constructionNumberStyle}>{num}</div>
 
-        <div style={constructionShortStatusStyle}>{visual.label}</div>
+                        <div style={constructionShortStatusStyle}>
+                          {visual.label}
+                        </div>
 
-        {activeCustomCategories.length > 0 ? (
-          <div style={constructionDotsWrapStyle}>
-            {activeCustomCategories.map((cat) => (
-              <span
-                key={cat.id}
-                title={cat.name || ""}
-                style={{
-                  ...constructionDotStyle,
-                  background: cat.color || "#a855f7",
-                }}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </button>
-  );
-})}
+                        {activeCustomCategories.length > 0 ? (
+                          <div style={constructionDotsWrapStyle}>
+                            {activeCustomCategories.map((cat) => (
+                              <span
+                                key={cat.id}
+                                title={cat.name || ""}
+                                style={{
+                                  ...constructionDotStyle,
+                                  background: cat.color || "#a855f7",
+                                }}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
 
               <div style={constructionEditorStyle}>
@@ -1145,12 +1152,14 @@ export default function ObjectMapPage() {
                     >
                       <option value="not_started">Не начато</option>
                       <option value="built_not_wrapped">
-                        {getCategoryByCode(constructionCategories, "frame_built_not_wrapped")
-                          ?.name || "Конструкция собрана, не обтянута"}
+                        {getCategoryByCode(
+                          constructionCategories,
+                          "frame_built_not_wrapped"
+                        )?.name || "Конструкция собрана, не обтянута"}
                       </option>
                       <option value="built">
-                        {getCategoryByCode(constructionCategories, "frame_built")?.name ||
-                          "Конструкция собрана"}
+                        {getCategoryByCode(constructionCategories, "frame_built")
+                          ?.name || "Конструкция собрана"}
                       </option>
                     </select>
                   </div>
@@ -1171,8 +1180,10 @@ export default function ObjectMapPage() {
                         )?.name || "Панели установлены, не обтянуты"}
                       </option>
                       <option value="wrapped">
-                        {getCategoryByCode(constructionCategories, "panel_wrapped")?.name ||
-                          "Панели обтянуты"}
+                        {getCategoryByCode(
+                          constructionCategories,
+                          "panel_wrapped"
+                        )?.name || "Панели обтянуты"}
                       </option>
                     </select>
                   </div>
@@ -1224,7 +1235,14 @@ export default function ObjectMapPage() {
                 ) : null}
 
                 {canEdit ? (
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      marginTop: 14,
+                    }}
+                  >
                     <button
                       type="button"
                       className={s.primaryBtn}
@@ -1424,6 +1442,33 @@ const constructionCardStyle = {
   background: "#fff",
 };
 
+const constructionCardContentStyle = {
+  position: "relative",
+  zIndex: 1,
+  display: "flex",
+  flexDirection: "column",
+  height: "100%",
+};
+
+const constructionSplitLayerStyle = {
+  position: "absolute",
+  inset: 0,
+  zIndex: 0,
+  display: "grid",
+  gridTemplateRows: "1fr 1fr",
+  pointerEvents: "none",
+};
+
+const constructionSplitTopStyle = {
+  width: "100%",
+  height: "100%",
+};
+
+const constructionSplitBottomStyle = {
+  width: "100%",
+  height: "100%",
+};
+
 const constructionNumberStyle = {
   fontSize: 26,
   fontWeight: 900,
@@ -1498,31 +1543,4 @@ const customCategoryItemStyle = {
   background: "#fff",
   border: "1px solid rgba(15,23,42,0.08)",
   fontSize: 13,
-};
-                         
-const constructionSplitLayerStyle = {
-  position: "absolute",
-  inset: 0,
-  zIndex: 0,
-  display: "grid",
-  gridTemplateRows: "1fr 1fr",
-  pointerEvents: "none",
-};
-
-const constructionSplitTopStyle = {
-  width: "100%",
-  height: "100%",
-};
-
-const constructionSplitBottomStyle = {
-  width: "100%",
-  height: "100%",
-};
-
-const constructionCardContentStyle = {
-  position: "relative",
-  zIndex: 1,
-  display: "flex",
-  flexDirection: "column",
-  height: "100%",
 };
