@@ -14,7 +14,6 @@ import {
   setDoc,
   where,
   writeBatch,
-  orderBy,
 } from "firebase/firestore";
 
 import s from "../../styles/objectMap.module.css";
@@ -76,20 +75,6 @@ function mergeCategories(dbCategories) {
     .sort((a, b) => Number(a.sortOrder || 999) - Number(b.sortOrder || 999));
 
   return [...base, ...custom];
-}
-
-function visibleForWorker(objectItem, uid) {
-  const status = String(objectItem?.status || "").toLowerCase();
-
-  if (status === "active") return true;
-
-  if (status === "rework") {
-    return Array.isArray(objectItem?.visibleToWorkerUids)
-      ? objectItem.visibleToWorkerUids.includes(uid)
-      : false;
-  }
-
-  return false;
 }
 
 function buildConstructionNumbers(start, end) {
@@ -205,10 +190,7 @@ export default function WorkerConstructionReportsPage() {
 
         setProfile(nextProfile);
 
-        await Promise.all([
-          loadObjects(user.uid),
-          loadBrigades(user.uid),
-        ]);
+        await Promise.all([loadObjectsForWorker(user.uid), loadBrigades(user.uid)]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки страницы отчётов");
       } finally {
@@ -230,13 +212,39 @@ export default function WorkerConstructionReportsPage() {
     loadSelectedObject(selectedObjectId);
   }, [selectedObjectId]);
 
-  async function loadObjects(uid) {
-    const q = query(collection(db, "Objects"), orderBy("name"));
-    const snap = await getDocs(q);
+  async function loadObjectsForWorker(workerUid) {
+    const activeSnap = await getDocs(
+      query(collection(db, "Objects"), where("status", "==", "active"))
+    );
 
-    const list = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((item) => visibleForWorker(item, uid));
+    const reworkSnap = await getDocs(
+      query(
+        collection(db, "Objects"),
+        where("visibleToWorkerUids", "array-contains", workerUid)
+      )
+    );
+
+    const activeList = activeSnap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    const reworkList = reworkSnap.docs
+      .map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+      .filter((item) => String(item.status || "").toLowerCase() === "rework");
+
+    const uniqueMap = new Map();
+
+    [...activeList, ...reworkList].forEach((item) => {
+      uniqueMap.set(item.id, item);
+    });
+
+    const list = Array.from(uniqueMap.values()).sort((a, b) =>
+      String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
+    );
 
     setObjects(list);
   }
