@@ -252,6 +252,14 @@ export default function ManagerIndexPage() {
             Бригады
           </Link>
 
+          <Link
+            href="/manager/construction-reports"
+            className={styles.actionButton}
+            style={menuBtnStyle}
+          >
+            Отчёты по конструкциям
+          </Link>
+
           <Link href="/manager/documents" className={styles.actionButton} style={menuBtnStyle}>
             Документы работников
           </Link>
