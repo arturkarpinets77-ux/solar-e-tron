@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -34,14 +34,20 @@ export default function ManagerBrigadesPage() {
   const [msg, setMsg] = useState("");
 
   const [usersList, setUsersList] = useState([]);
+  const [objectsList, setObjectsList] = useState([]);
   const [brigades, setBrigades] = useState([]);
 
   const [brigadeName, setBrigadeName] = useState("");
+  const [selectedObjectId, setSelectedObjectId] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
+
+  const selectedObject = useMemo(() => {
+    return objectsList.find((x) => x.id === selectedObjectId) || null;
+  }, [objectsList, selectedObjectId]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -77,7 +83,7 @@ export default function ManagerBrigadesPage() {
           return;
         }
 
-        await Promise.all([loadUsers(), loadBrigades()]);
+        await Promise.all([loadUsers(), loadObjects(), loadBrigades()]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки бригад");
       } finally {
@@ -107,6 +113,18 @@ export default function ManagerBrigadesPage() {
     setUsersList(list);
   }
 
+  async function loadObjects() {
+    const snap = await getDocs(collection(db, "Objects"));
+
+    const list = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) =>
+        String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
+      );
+
+    setObjectsList(list);
+  }
+
   async function loadBrigades() {
     const q = query(collection(db, "Brigades"), orderBy("name"));
     const snap = await getDocs(q);
@@ -121,6 +139,7 @@ export default function ManagerBrigadesPage() {
 
   function resetForm() {
     setBrigadeName("");
+    setSelectedObjectId("");
     setSelectedUsers([]);
     setEditingId(null);
   }
@@ -139,6 +158,11 @@ export default function ManagerBrigadesPage() {
 
     if (!name) {
       setMsg("Укажи название бригады.");
+      return;
+    }
+
+    if (!selectedObjectId || !selectedObject) {
+      setMsg("Выбери объект для бригады.");
       return;
     }
 
@@ -168,6 +192,8 @@ export default function ManagerBrigadesPage() {
         doc(db, "Brigades", brigadeId),
         {
           name,
+          objectId: selectedObject.id,
+          objectName: String(selectedObject.name || selectedObject.id),
           memberUids: selectedUsers,
           memberNames,
           members,
@@ -190,13 +216,14 @@ export default function ManagerBrigadesPage() {
   function handleEdit(item) {
     setEditingId(item.id);
     setBrigadeName(String(item.name || ""));
+    setSelectedObjectId(String(item.objectId || ""));
     setSelectedUsers(Array.isArray(item.memberUids) ? item.memberUids : []);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleDelete(item) {
-    const yes = window.confirm(`Удалить бригаду "${item.name || item.id}"?`);
-    if (!yes) return;
+    const ok = window.confirm(`Удалить бригаду "${item.name || item.id}"?`);
+    if (!ok) return;
 
     setDeletingId(item.id);
     setMsg("");
@@ -232,7 +259,7 @@ export default function ManagerBrigadesPage() {
           <div>
             <div className={`${styles.title} ${typo.title}`}>Бригады</div>
             <div className={styles.subtitle}>
-              Директор / администратор назначает участников и название бригады
+              Директор / администратор назначает состав, название и объект бригады
             </div>
           </div>
         </div>
@@ -247,6 +274,22 @@ export default function ManagerBrigadesPage() {
                 placeholder="Например: Бригада 1"
                 style={inputStyle}
               />
+            </div>
+
+            <div>
+              <div style={labelStyle}>Объект бригады</div>
+              <select
+                value={selectedObjectId}
+                onChange={(e) => setSelectedObjectId(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">Выбери объект</option>
+                {objectsList.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name || item.id}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -286,7 +329,7 @@ export default function ManagerBrigadesPage() {
                 type="submit"
                 className={styles.actionButton}
                 disabled={saving}
-                style={{ opacity: saving ? 0.6 : 1, maxWidth: 240 }}
+                style={{ opacity: saving ? 0.6 : 1, maxWidth: 260 }}
               >
                 {saving
                   ? "Сохранение..."
@@ -331,6 +374,10 @@ export default function ManagerBrigadesPage() {
                 }}
               >
                 <div style={{ fontWeight: 800 }}>{item.name || item.id}</div>
+
+                <div>
+                  <b>Объект:</b> {item.objectName || item.objectId || "-"}
+                </div>
 
                 <div>
                   <b>Участников:</b>{" "}
