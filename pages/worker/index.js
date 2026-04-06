@@ -22,7 +22,7 @@ export default function WorkerIndexPage() {
   const [msg, setMsg] = useState("");
 
   const [profile, setProfile] = useState(null);
-  const [brigadeName, setBrigadeName] = useState("");
+  const [brigades, setBrigades] = useState([]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -70,7 +70,7 @@ export default function WorkerIndexPage() {
           status,
         });
 
-        await loadMyBrigade(user.uid);
+        await loadMyBrigades(user.uid);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки кабинета работника");
       } finally {
@@ -81,7 +81,7 @@ export default function WorkerIndexPage() {
     return () => unsub();
   }, [router]);
 
-  async function loadMyBrigade(uid) {
+  async function loadMyBrigades(uid) {
     const q = query(
       collection(db, "Brigades"),
       where("memberUids", "array-contains", uid)
@@ -89,13 +89,15 @@ export default function WorkerIndexPage() {
 
     const snap = await getDocs(q);
 
-    if (snap.empty) {
-      setBrigadeName("");
-      return;
-    }
+    const list = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const aKey = `${a.objectName || ""} ${a.name || ""}`;
+        const bKey = `${b.objectName || ""} ${b.name || ""}`;
+        return aKey.localeCompare(bKey, "ru");
+      });
 
-    const first = snap.docs[0].data() || {};
-    setBrigadeName(String(first.name || ""));
+    setBrigades(list);
   }
 
   function roleLabel(role) {
@@ -154,8 +156,22 @@ export default function WorkerIndexPage() {
           </div>
 
           <div style={infoRowStyle}>
-            <span style={labelStyle}>Бригада:</span>
-            <span style={valueStyle}>{brigadeName || "Не назначен"}</span>
+            <span style={labelStyle}>Бригады:</span>
+            <span style={valueStyle}>
+              {brigades.length === 0 ? (
+                "Не назначен"
+              ) : (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {brigades.map((item) => (
+                    <div key={item.id}>
+                      <b>{item.name || item.id}</b>
+                      {" — "}
+                      {item.objectName || item.objectId || "Без объекта"}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </span>
           </div>
         </div>
 
