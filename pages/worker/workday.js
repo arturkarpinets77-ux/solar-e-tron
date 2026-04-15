@@ -12,7 +12,6 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  updateDoc,
   where,
 } from "firebase/firestore";
 
@@ -33,6 +32,16 @@ function getNowTime() {
   return `${h}:${m}`;
 }
 
+function dayStatusLabel(status) {
+  const value = String(status || "").toLowerCase();
+
+  if (value === "started") return "В работе";
+  if (value === "break") return "На перерыве";
+  if (value === "ended") return "Завершён";
+
+  return "Не начат";
+}
+
 export default function WorkerWorkdayPage() {
   const router = useRouter();
 
@@ -42,8 +51,8 @@ export default function WorkerWorkdayPage() {
 
   const [profile, setProfile] = useState(null);
   const [objects, setObjects] = useState([]);
-  const [selectedObjectId, setSelectedObjectId] = useState("");
   const [todayWorkday, setTodayWorkday] = useState(null);
+  const [selectedObjectId, setSelectedObjectId] = useState("");
 
   const todayKey = useMemo(() => getTodayKey(), []);
 
@@ -60,8 +69,7 @@ export default function WorkerWorkdayPage() {
       }
 
       try {
-        const userRef = doc(db, "Users", user.uid);
-        const userSnap = await getDoc(userRef);
+        const userSnap = await getDoc(doc(db, "Users", user.uid));
 
         if (!userSnap.exists()) {
           await signOut(auth);
@@ -69,9 +77,9 @@ export default function WorkerWorkdayPage() {
           return;
         }
 
-        const data = userSnap.data() || {};
-        const role = String(data.role || "").toLowerCase();
-        const status = String(data.status || "").toLowerCase();
+        const userData = userSnap.data() || {};
+        const role = String(userData.role || "").toLowerCase();
+        const status = String(userData.status || "").toLowerCase();
 
         if (status !== "active") {
           router.replace("/dashboard");
@@ -85,12 +93,10 @@ export default function WorkerWorkdayPage() {
 
         setProfile({
           uid: user.uid,
-          firstName: String(data.firstName || ""),
-          lastName: String(data.lastName || ""),
-          email: String(data.email || user.email || ""),
-          personalNumber: String(data.personalNumber || ""),
-          role,
-          status,
+          firstName: String(userData.firstName || ""),
+          lastName: String(userData.lastName || ""),
+          email: String(userData.email || user.email || ""),
+          personalNumber: String(userData.personalNumber || ""),
         });
 
         await Promise.all([
@@ -108,78 +114,81 @@ export default function WorkerWorkdayPage() {
   }, [router, todayKey]);
 
   async function loadObjectsForWorker(workerUid) {
-    const activeSnap = await getDocs(
-      query(collection(db, "Objects"), where("status", "==", "active"))
-    );
+    try {
+      const activeSnap = await getDocs(
+        query(collection(db, "Objects"), where("status", "==", "active"))
+      );
 
-    const reworkSnap = await getDocs(
-      query(
-        collection(db, "Objects"),
-        where("visibleToWorkerUids", "array-contains", workerUid)
-      )
-    );
+      const reworkSnap = await getDocs(
+        query(
+          collection(db, "Objects"),
+          where("status", "==", "rework"),
+          where("visibleToWorkerUids", "array-contains", workerUid)
+        )
+      );
 
-    const activeList = activeSnap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
-
-    const reworkList = reworkSnap.docs
-      .map((d) => ({
+      const activeList = activeSnap.docs.map((d) => ({
         id: d.id,
         ...d.data(),
-      }))
-      .filter((item) => String(item.status || "").toLowerCase() === "rework");
+      }));
 
-    const uniqueMap = new Map();
+      const reworkList = reworkSnap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
 
-    [...activeList, ...reworkList].forEach((item) => {
-      uniqueMap.set(item.id, item);
-    });
+      const uniqueMap = new Map();
+      [...activeList, ...reworkList].forEach((item) => {
+        uniqueMap.set(item.id, item);
+      });
 
-    const list = Array.from(uniqueMap.values()).sort((a, b) =>
-      String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
-    );
+      const list = Array.from(uniqueMap.values()).sort((a, b) =>
+        String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
+      );
 
-    setObjects(list);
+      setObjects(list);
+
+      setSelectedObjectId((prev) => {
+        if (prev) return prev;
+        if (list.length === 1) return list[0].id;
+        return "";
+      });
+    } catch (e) {
+      setObjects([]);
+      setMsg(e?.message || "Ошибка загрузки объектов");
+    }
   }
 
   async function loadTodayWorkday(uid, dateKey) {
-    const ref = doc(db, "Users", uid, "Workdays", dateKey);
-    const snap = await getDoc(ref);
+    try {
+      const ref = doc(db, "Users", uid, "Workdays", dateKey);
+      const snap = await getDoc(ref);
 
-    if (!snap.exists()) {
-      setTodayWorkday(null);
-      return;
-    }
+      if (!snap.exists()) {
+        setTodayWorkday(null);
+        return;
+      }
 
-    const data = { id: snap.id, ...snap.data() };
-    setTodayWorkday(data);
+      const data = { id: snap.id, ...snap.data() };
+      setTodayWorkday(data);
 
-    if (data.objectId) {
-      setSelectedObjectId(String(data.objectId));
+      if (data.objectId) {
+        setSelectedObjectId(String(data.objectId));
+      }
+    } catch (e) {
+      setMsg(e?.message || "Ошибка загрузки рабочего дня");
     }
   }
 
-  function findSelectedObject() {
+  function selectedObject() {
     return objects.find((item) => item.id === selectedObjectId) || null;
-  }
-
-  function dayStatusLabel() {
-    if (!todayWorkday) return "Не начат";
-
-    const status = String(todayWorkday.status || "").toLowerCase();
-    if (status === "started") return "В работе";
-    if (status === "break") return "Перерыв";
-    if (status === "ended") return "Завершён";
-    return "Не начат";
   }
 
   async function handleStartDay() {
     if (!profile?.uid) return;
 
-    const selectedObject = findSelectedObject();
-    if (!selectedObject) {
+    const objectItem = selectedObject();
+    if (!objectItem) {
       setMsg("Сначала выбери объект.");
       return;
     }
@@ -194,8 +203,8 @@ export default function WorkerWorkdayPage() {
         ref,
         {
           date: todayKey,
-          objectId: selectedObject.id,
-          objectName: String(selectedObject.name || selectedObject.id),
+          objectId: objectItem.id,
+          objectName: String(objectItem.name || objectItem.id),
           status: "started",
           startTime: getNowTime(),
           updatedAt: serverTimestamp(),
@@ -222,11 +231,15 @@ export default function WorkerWorkdayPage() {
     try {
       const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
-      await updateDoc(ref, {
-        status: "break",
-        breakStartTime: getNowTime(),
-        updatedAt: serverTimestamp(),
-      });
+      await setDoc(
+        ref,
+        {
+          status: "break",
+          breakStartTime: getNowTime(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
       await loadTodayWorkday(profile.uid, todayKey);
       setMsg("Перерыв начат.");
@@ -246,11 +259,15 @@ export default function WorkerWorkdayPage() {
     try {
       const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
-      await updateDoc(ref, {
-        status: "started",
-        breakEndTime: getNowTime(),
-        updatedAt: serverTimestamp(),
-      });
+      await setDoc(
+        ref,
+        {
+          status: "started",
+          breakEndTime: getNowTime(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
       await loadTodayWorkday(profile.uid, todayKey);
       setMsg("Перерыв завершён.");
@@ -262,7 +279,7 @@ export default function WorkerWorkdayPage() {
   }
 
   async function handleEndDay() {
-    if (!profile?.uid || !todayWorkday) return;
+    if (!profile?.uid) return;
 
     setSaving(true);
     setMsg("");
@@ -270,11 +287,17 @@ export default function WorkerWorkdayPage() {
     try {
       const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
-      await updateDoc(ref, {
+      const payload = {
         status: "ended",
         endTime: getNowTime(),
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      if (todayWorkday?.status === "break" && !todayWorkday?.breakEndTime) {
+        payload.breakEndTime = getNowTime();
+      }
+
+      await setDoc(ref, payload, { merge: true });
 
       await loadTodayWorkday(profile.uid, todayKey);
       setMsg("Рабочий день завершён.");
@@ -285,25 +308,18 @@ export default function WorkerWorkdayPage() {
     }
   }
 
-  const canStartDay = !todayWorkday;
+  const currentStatus = String(todayWorkday?.status || "");
+  const canStartDay = !todayWorkday || !currentStatus || currentStatus === "ended";
+  const canChangeObject = canStartDay;
   const canStartBreak =
-    !!todayWorkday &&
-    String(todayWorkday.status || "") === "started" &&
-    !todayWorkday.breakStartTime &&
-    !todayWorkday.endTime;
-
+    currentStatus === "started" &&
+    !todayWorkday?.breakStartTime;
   const canEndBreak =
-    !!todayWorkday &&
-    String(todayWorkday.status || "") === "break" &&
-    !!todayWorkday.breakStartTime &&
-    !todayWorkday.breakEndTime &&
-    !todayWorkday.endTime;
-
+    currentStatus === "break" &&
+    !!todayWorkday?.breakStartTime &&
+    !todayWorkday?.breakEndTime;
   const canEndDay =
-    !!todayWorkday &&
-    String(todayWorkday.status || "") !== "ended" &&
-    !!todayWorkday.startTime &&
-    !todayWorkday.endTime;
+    currentStatus === "started" || currentStatus === "break";
 
   if (loading) {
     return (
@@ -331,15 +347,12 @@ export default function WorkerWorkdayPage() {
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Объект:</span>
-            <span style={valueStyle}>
+            <div style={{ width: "100%" }}>
               <select
                 value={selectedObjectId}
                 onChange={(e) => setSelectedObjectId(e.target.value)}
-                disabled={!canStartDay}
-                style={{
-                  ...inputStyle,
-                  opacity: canStartDay ? 1 : 0.7,
-                }}
+                disabled={!canChangeObject}
+                style={selectStyle}
               >
                 <option value="">Выбери объект...</option>
                 {objects.map((item) => (
@@ -348,12 +361,12 @@ export default function WorkerWorkdayPage() {
                   </option>
                 ))}
               </select>
-            </span>
+            </div>
           </div>
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Статус дня:</span>
-            <span style={valueStyle}>{dayStatusLabel()}</span>
+            <span style={valueStyle}>{dayStatusLabel(todayWorkday?.status)}</span>
           </div>
 
           <div style={infoRowStyle}>
@@ -377,59 +390,43 @@ export default function WorkerWorkdayPage() {
           </div>
         </div>
 
-        <div style={menuGridStyle}>
+        <div style={buttonsWrapStyle}>
           <button
             type="button"
+            className={s.actionButton}
+            style={buttonStyle}
             onClick={handleStartDay}
             disabled={!canStartDay || saving}
-            className={s.actionButton}
-            style={{
-              ...menuBtnStyle,
-              opacity: !canStartDay || saving ? 0.55 : 1,
-              cursor: !canStartDay || saving ? "not-allowed" : "pointer",
-            }}
           >
             Начать рабочий день
           </button>
 
           <button
             type="button"
+            className={s.actionButton}
+            style={buttonStyle}
             onClick={handleStartBreak}
             disabled={!canStartBreak || saving}
-            className={s.actionButton}
-            style={{
-              ...menuBtnStyle,
-              opacity: !canStartBreak || saving ? 0.55 : 1,
-              cursor: !canStartBreak || saving ? "not-allowed" : "pointer",
-            }}
           >
             Начать перерыв
           </button>
 
           <button
             type="button"
+            className={s.actionButton}
+            style={buttonStyle}
             onClick={handleEndBreak}
             disabled={!canEndBreak || saving}
-            className={s.actionButton}
-            style={{
-              ...menuBtnStyle,
-              opacity: !canEndBreak || saving ? 0.55 : 1,
-              cursor: !canEndBreak || saving ? "not-allowed" : "pointer",
-            }}
           >
             Закончить перерыв
           </button>
 
           <button
             type="button"
+            className={s.actionButton}
+            style={buttonStyle}
             onClick={handleEndDay}
             disabled={!canEndDay || saving}
-            className={s.actionButton}
-            style={{
-              ...menuBtnStyle,
-              opacity: !canEndDay || saving ? 0.55 : 1,
-              cursor: !canEndDay || saving ? "not-allowed" : "pointer",
-            }}
           >
             Завершить рабочий день
           </button>
@@ -455,9 +452,9 @@ const infoBoxStyle = {
 
 const infoRowStyle = {
   display: "grid",
-  gridTemplateColumns: "200px 1fr",
-  gap: 10,
-  marginBottom: 8,
+  gridTemplateColumns: "170px 1fr",
+  gap: 12,
+  marginBottom: 10,
   alignItems: "center",
 };
 
@@ -469,28 +466,25 @@ const valueStyle = {
   wordBreak: "break-word",
 };
 
-const inputStyle = {
+const selectStyle = {
   width: "100%",
-  minHeight: 48,
+  minHeight: 52,
   borderRadius: 16,
-  border: "1px solid rgba(15,23,42,0.16)",
+  border: "1px solid rgba(15,23,42,0.12)",
   background: "#fff",
-  padding: "0 12px",
+  padding: "0 14px",
+  fontSize: 16,
   outline: "none",
 };
 
-const menuGridStyle = {
+const buttonsWrapStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
   gap: 14,
   marginTop: 18,
 };
 
-const menuBtnStyle = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: 64,
+const buttonStyle = {
+  minHeight: 62,
   textAlign: "center",
 };
 
