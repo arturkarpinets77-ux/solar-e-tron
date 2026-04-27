@@ -106,8 +106,12 @@ export default function AccountantPage() {
     setUsers(list);
 
     if (list.length > 0) {
-      setSelectedUid(list[0].id);
-      await loadWorkdays(list[0].id);
+      const firstWorker =
+        list.find((u) => String(u.role || "").toLowerCase() === "worker") ||
+        list[0];
+
+      setSelectedUid(firstWorker.id);
+      await loadWorkdays(firstWorker.id);
     }
   }
 
@@ -141,7 +145,17 @@ export default function AccountantPage() {
 
   function exportCsv() {
     const lines = [
-      ["Дата", "Статус", "Объект", "Начало", "Перерыв начало", "Перерыв конец", "Конец", "Итого минут", "Итого"].join(";"),
+      [
+        "Дата",
+        "Статус",
+        "Объект",
+        "Начало",
+        "Перерыв начало",
+        "Перерыв конец",
+        "Конец",
+        "Итого минут",
+        "Итого",
+      ].join(";"),
       ...visibleDays.map((d) =>
         [
           d.dateKey,
@@ -164,7 +178,9 @@ export default function AccountantPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `workdays-${selectedUser?.personalNumber || selectedUid}-${selectedMonth || "all"}.csv`;
+    a.download = `workdays-${
+      selectedUser?.personalNumber || selectedUid
+    }-${selectedMonth || "all"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -206,16 +222,20 @@ export default function AccountantPage() {
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 style={inputStyle}
               >
-                {monthOptions.map((m) => (
-                  <option key={m} value={m}>
-                    {monthLabel(m)}
-                  </option>
-                ))}
+                {monthOptions.length === 0 ? (
+                  <option value="">Нет месяцев</option>
+                ) : (
+                  monthOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {monthLabel(m)}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
 
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 14, color: "#111827" }}>
             <b>Выбран:</b> {selectedUser ? userDisplayName(selectedUser) : "-"}
           </div>
 
@@ -232,7 +252,7 @@ export default function AccountantPage() {
 
         {msg ? <div style={msgStyle}>{msg}</div> : null}
 
-        <h2 style={{ marginTop: 22 }}>Рабочие дни</h2>
+        <h2 style={sectionTitleStyle}>Рабочие дни</h2>
 
         <div style={{ display: "grid", gap: 12 }}>
           {visibleDays.length === 0 ? (
@@ -245,10 +265,22 @@ export default function AccountantPage() {
                   <span>{d.statusText}</span>
                 </div>
 
-                <div><b>Объект:</b> {d.objectName || "-"}</div>
-                <div><b>Начало:</b> {d.startText}</div>
-                <div><b>Перерыв:</b> {d.breakStartText} - {d.breakEndText}</div>
-                <div><b>Конец:</b> {d.endText}</div>
+                <div>
+                  <b>Объект:</b> {d.objectName || "-"}
+                </div>
+
+                <div>
+                  <b>Начало:</b> {d.startText}
+                </div>
+
+                <div>
+                  <b>Перерыв:</b> {d.breakStartText} - {d.breakEndText}
+                </div>
+
+                <div>
+                  <b>Конец:</b> {d.endText}
+                </div>
+
                 <div>
                   <b>Итого:</b>{" "}
                   {d.endText !== "-"
@@ -260,12 +292,14 @@ export default function AccountantPage() {
           )}
         </div>
 
-        <h2 style={{ marginTop: 22 }}>
+        <h2 style={sectionTitleStyle}>
           Итого за месяц: {formatMinutes(totalMonthMinutes)}
         </h2>
 
         <div style={{ marginTop: 16 }}>
-          <Link href="/">На главную</Link>
+          <Link href="/" style={linkStyle}>
+            На главную
+          </Link>
         </div>
       </div>
     </main>
@@ -275,6 +309,7 @@ export default function AccountantPage() {
 const pageStyle = {
   minHeight: "100vh",
   padding: 20,
+  color: "#111827",
 };
 
 const cardStyle = {
@@ -282,18 +317,28 @@ const cardStyle = {
   margin: "0 auto",
   padding: 24,
   borderRadius: 24,
-  background: "rgba(255,255,255,0.82)",
+  background: "rgba(255,255,255,0.88)",
+  color: "#111827",
 };
 
 const titleStyle = {
   marginTop: 0,
+  color: "#111827",
+  fontWeight: 800,
+};
+
+const sectionTitleStyle = {
+  marginTop: 22,
+  color: "#111827",
+  fontWeight: 800,
 };
 
 const boxStyle = {
   padding: 16,
   borderRadius: 18,
-  background: "rgba(255,255,255,0.75)",
+  background: "rgba(255,255,255,0.82)",
   border: "1px solid rgba(15,23,42,0.08)",
+  color: "#111827",
 };
 
 const grid2Style = {
@@ -305,6 +350,7 @@ const grid2Style = {
 const labelStyle = {
   fontWeight: 700,
   marginBottom: 6,
+  color: "#111827",
 };
 
 const inputStyle = {
@@ -314,6 +360,7 @@ const inputStyle = {
   border: "1px solid rgba(15,23,42,0.14)",
   background: "#fff",
   padding: "0 12px",
+  color: "#111827",
 };
 
 const buttonsStyle = {
@@ -327,7 +374,8 @@ const buttonStyle = {
   border: "1px solid rgba(15,23,42,0.12)",
   borderRadius: 12,
   padding: "10px 14px",
-  background: "rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.95)",
+  color: "#111827",
   cursor: "pointer",
 };
 
@@ -335,14 +383,16 @@ const msgStyle = {
   marginTop: 14,
   padding: 12,
   borderRadius: 14,
-  background: "rgba(255,245,230,0.9)",
+  background: "rgba(255,245,230,0.95)",
+  color: "#111827",
 };
 
 const dayStyle = {
   padding: 14,
   borderRadius: 16,
-  background: "rgba(255,255,255,0.75)",
+  background: "rgba(255,255,255,0.86)",
   border: "1px solid rgba(15,23,42,0.08)",
+  color: "#111827",
 };
 
 const topRowStyle = {
@@ -350,4 +400,10 @@ const topRowStyle = {
   justifyContent: "space-between",
   gap: 12,
   marginBottom: 8,
+  color: "#111827",
+};
+
+const linkStyle = {
+  color: "#1d4ed8",
+  fontWeight: 700,
 };
