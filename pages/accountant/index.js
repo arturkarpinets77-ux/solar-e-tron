@@ -2,138 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import { auth, db } from "../../lib/firebaseClient";
+import { auth, db } from "../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  orderBy,
-  query,
-} from "firebase/firestore";
+  DEFAULT_BREAK_MINUTES,
+  formatMinutes,
+  getMonthKey,
+  monthLabel,
+  normalizeWorkday,
+  sortWorkdaysDesc,
+} from "../lib/workdayUtils";
 
-import styles from "../../styles/accountant.module.css";
-import typo from "../../styles/typography.module.css";
-
-const DEFAULT_BREAK_MINUTES = 30;
-const ALL_VALUE = "__all__";
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-function toTime(ts) {
-  if (!ts) return "-";
-  try {
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
-    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  } catch {
-    return "-";
-  }
-}
-
-function minutesBetween(a, b) {
-  if (!a || !b) return 0;
-  try {
-    const da = a.toDate ? a.toDate() : new Date(a);
-    const db = b.toDate ? b.toDate() : new Date(b);
-    return Math.max(0, Math.round((db - da) / 60000));
-  } catch {
-    return 0;
-  }
-}
-
-function fmtHM(totalMinutes) {
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}ч ${pad2(m)}м`;
-}
-
-function statusLabel(d) {
-  const ended = !!d?.endAt;
-  const started = !!d?.startAt;
-  const bS = !!d?.breakStartAt;
-  const bE = !!d?.breakEndAt;
-
-  if (ended) return "Завершён";
-  if (bS && !bE) return "Перерыв";
-  if (started) return "Идёт";
-  return "Не начат";
-}
-
-function monthValueFromDate(date = new Date()) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
-}
-
-function fullName(u) {
-  return (
-    `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
-    `${u.name || ""} ${u.surname || ""}`.trim() ||
-    u.email ||
-    "-"
-  );
-}
-
-function roleLabel(role) {
-  const value = String(role || "").toLowerCase();
-
-  if (value === "worker") return "Работник";
-  if (value === "accountant") return "Бухгалтер";
-  if (value === "director") return "Директор";
-  if (value === "admin") return "Администратор";
-
-  return role || "-";
-}
-
-function calcNetMinutes(d) {
-  const start = d.startAt;
-  const end = d.endAt;
-  const bS = d.breakStartAt;
-  const bE = d.breakEndAt;
-
-  const total = minutesBetween(start, end);
-  const brActual = minutesBetween(bS, bE);
-
-  const noBreakMarked = !bS && !bE;
-  const shouldApplyDefault = !!end && noBreakMarked;
-
-  const br = shouldApplyDefault ? DEFAULT_BREAK_MINUTES : brActual;
-  const net = Math.max(0, total - br);
-
-  return {
-    total,
-    br,
-    net,
-    shouldApplyDefault,
-  };
-}
-
-function downloadTextFile(filename, content, mimeType = "text/plain;charset=utf-8;") {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  URL.revokeObjectURL(url);
-}
-
-function csvEscape(value) {
-  const str = String(value ?? "");
-  return `"${str.replace(/"/g, '""')}"`;
-}
-
-function htmlEscape(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function userDisplayName(user) {
+  const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+  const personal = user.personalNumber ? ` — ${user.personalNumber}` : "";
+  const role = user.role ? ` — ${user.role}` : "";
+  return `${name || user.email || user.id}${personal}${role}`;
 }
 
 export default function AccountantPage() {
@@ -141,27 +27,35 @@ export default function AccountantPage() {
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
-  const [profile, setProfile] = useState(null);
 
-  const [people, setPeople] = useState([]);
-  const [selectedWorkerId, setSelectedWorkerId] = useState(ALL_VALUE);
-  const [monthValue, setMonthValue] = useState(monthValueFromDate());
+  const [users, setUsers] = useState([]);
+  const [selectedUid, setSelectedUid] = useState("");
+  const [allDays, setAllDays] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState("");
 
-  const [rows, setRows] = useState([]);
-  const [summaryRows, setSummaryRows] = useState([]);
-  const [rowsLoading, setRowsLoading] = useState(false);
+  const selectedUser = users.find((u) => u.id === selectedUid) || null;
 
-  const selectedPerson = useMemo(
-    () => people.find((w) => w.id === selectedWorkerId) || null,
-    [people, selectedWorkerId]
-  );
+  const monthOptions = useMemo(() => {
+    const set = new Set(allDays.map((d) => getMonthKey(d.dateKey)).filter(Boolean));
+    return Array.from(set).sort().reverse();
+  }, [allDays]);
+
+  const visibleDays = useMemo(() => {
+    return allDays
+      .filter((d) => !selectedMonth || getMonthKey(d.dateKey) === selectedMonth)
+      .sort(sortWorkdaysDesc);
+  }, [allDays, selectedMonth]);
+
+  const totalMonthMinutes = useMemo(() => {
+    return visibleDays.reduce((sum, d) => sum + Number(d.totalMinutes || 0), 0);
+  }, [visibleDays]);
 
   useEffect(() => {
     if (!auth || !db) return;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      setMsg("");
       setLoading(true);
+      setMsg("");
 
       if (!user) {
         router.replace("/login");
@@ -177,27 +71,20 @@ export default function AccountantPage() {
         }
 
         const data = snap.data() || {};
-        const role = String(data.role || "").trim().toLowerCase();
-        const status = String(data.status || "").trim().toLowerCase();
+        const role = String(data.role || "").toLowerCase();
+        const status = String(data.status || "").toLowerCase();
 
         if (status !== "active") {
           router.replace("/dashboard");
           return;
         }
 
-        if (role !== "accountant") {
+        if (role !== "accountant" && role !== "director" && role !== "admin") {
           router.replace("/dashboard");
           return;
         }
 
-        setProfile({
-          uid: user.uid,
-          role,
-          status,
-          email: String(data.email || user.email || "").trim(),
-        });
-
-        await loadPeople();
+        await loadUsers();
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки кабинета бухгалтера");
       } finally {
@@ -208,633 +95,259 @@ export default function AccountantPage() {
     return () => unsub();
   }, [router]);
 
-  async function loadPeople() {
-    if (!db) return;
-
-    const q = query(collection(db, "Users"));
-    const snap = await getDocs(q);
+  async function loadUsers() {
+    const snap = await getDocs(collection(db, "Users"));
 
     const list = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((u) => {
-        const role = String(u.role || "").toLowerCase();
-        return role === "worker" || role === "director";
-      })
       .filter((u) => String(u.status || "").toLowerCase() === "active")
-      .sort((a, b) => fullName(a).localeCompare(fullName(b)));
+      .sort((a, b) => userDisplayName(a).localeCompare(userDisplayName(b), "ru"));
 
-    setPeople(list);
+    setUsers(list);
+
+    if (list.length > 0) {
+      setSelectedUid(list[0].id);
+      await loadWorkdays(list[0].id);
+    }
   }
 
-  async function loadWorkdays(workerUid, monthStr) {
-    if (!db || !workerUid || !monthStr) {
-      setRows([]);
-      return;
-    }
-
-    setRowsLoading(true);
+  async function loadWorkdays(uid) {
     setMsg("");
 
     try {
-      const q = query(
-        collection(db, "Users", workerUid, "Workdays"),
-        orderBy("dateKey", "desc")
-      );
+      const snap = await getDocs(collection(db, "Users", uid, "Workdays"));
 
-      const snap = await getDocs(q);
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const list = snap.docs
+        .map((d) => normalizeWorkday(d.id, d.data()))
+        .sort(sortWorkdaysDesc);
 
-      const filtered = all.filter((item) =>
-        String(item.dateKey || "").startsWith(monthStr)
-      );
+      setAllDays(list);
 
-      setRows(filtered);
-      setSummaryRows([]);
+      const months = Array.from(
+        new Set(list.map((d) => getMonthKey(d.dateKey)).filter(Boolean))
+      ).sort().reverse();
+
+      setSelectedMonth(months[0] || "");
     } catch (e) {
-      setMsg(e?.message || "Ошибка загрузки рабочего времени");
-    } finally {
-      setRowsLoading(false);
+      setAllDays([]);
+      setMsg(e?.message || "Ошибка загрузки рабочих дней");
     }
   }
 
-  async function loadSummaryForAll(monthStr) {
-    if (!db || !monthStr) {
-      setSummaryRows([]);
-      return;
-    }
-
-    setRowsLoading(true);
-    setMsg("");
-
-    try {
-      const result = [];
-
-      for (const person of people) {
-        const q = query(
-          collection(db, "Users", person.id, "Workdays"),
-          orderBy("dateKey", "desc")
-        );
-
-        const snap = await getDocs(q);
-        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const filtered = all.filter((item) =>
-          String(item.dateKey || "").startsWith(monthStr)
-        );
-
-        let workedDays = 0;
-        let totalMinutes = 0;
-
-        filtered.forEach((d) => {
-          const calc = calcNetMinutes(d);
-          if (d.startAt && d.endAt) {
-            workedDays += 1;
-            totalMinutes += calc.net;
-          }
-        });
-
-        result.push({
-          id: person.id,
-          name: fullName(person),
-          personalNumber: person.personalNumber || "-",
-          role: String(person.role || "").toLowerCase(),
-          workedDays,
-          totalMinutes,
-        });
-      }
-
-      result.sort((a, b) => a.name.localeCompare(b.name));
-
-      setSummaryRows(result);
-      setRows([]);
-    } catch (e) {
-      setMsg(e?.message || "Ошибка загрузки сводки");
-    } finally {
-      setRowsLoading(false);
-    }
+  async function handleUserChange(uid) {
+    setSelectedUid(uid);
+    await loadWorkdays(uid);
   }
-
-  useEffect(() => {
-    if (!monthValue) {
-      setRows([]);
-      setSummaryRows([]);
-      return;
-    }
-
-    if (selectedWorkerId === ALL_VALUE) {
-      if (people.length) {
-        loadSummaryForAll(monthValue);
-      } else {
-        setSummaryRows([]);
-        setRows([]);
-      }
-      return;
-    }
-
-    if (!selectedWorkerId) {
-      setRows([]);
-      setSummaryRows([]);
-      return;
-    }
-
-    loadWorkdays(selectedWorkerId, monthValue);
-  }, [selectedWorkerId, monthValue, people]);
-
-  const totalMinutes = useMemo(() => {
-    if (selectedWorkerId === ALL_VALUE) {
-      return summaryRows.reduce((sum, r) => sum + r.totalMinutes, 0);
-    }
-
-    return rows.reduce((sum, d) => {
-      const calc = calcNetMinutes(d);
-      return sum + calc.net;
-    }, 0);
-  }, [rows, summaryRows, selectedWorkerId]);
 
   function exportCsv() {
-    try {
-      if (selectedWorkerId === ALL_VALUE) {
-        const header = [
-          "Имя",
-          "Личный номер",
-          "Роль",
-          "Отработано дней",
-          "Отработано часов",
-        ];
-
-        const lines = [
-          header.map(csvEscape).join(";"),
-          ...summaryRows.map((r) =>
-            [
-              r.name,
-              r.personalNumber,
-              roleLabel(r.role),
-              r.workedDays,
-              fmtHM(r.totalMinutes),
-            ]
-              .map(csvEscape)
-              .join(";")
-          ),
-        ];
-
-        downloadTextFile(
-          `accountant_all_${monthValue}.csv`,
-          "\uFEFF" + lines.join("\n"),
-          "text/csv;charset=utf-8;"
-        );
-        return;
-      }
-
-      const workerName = selectedPerson ? fullName(selectedPerson) : "Работник";
-      const header = [
-        "Дата",
-        "Статус",
-        "Объект",
-        "Начало",
-        "Перерыв начало",
-        "Перерыв конец",
-        "Конец",
-        "Итого",
-      ];
-
-      const lines = [
-        [workerName, selectedPerson?.personalNumber || "-", roleLabel(selectedPerson?.role || "-"), monthValue]
-          .map(csvEscape)
-          .join(";"),
-        header.map(csvEscape).join(";"),
-        ...rows.map((d) => {
-          const calc = calcNetMinutes(d);
-          return [
-            d.dateKey || d.id,
-            statusLabel(d),
-            d.objectName || "-",
-            toTime(d.startAt),
-            toTime(d.breakStartAt),
-            toTime(d.breakEndAt),
-            toTime(d.endAt),
-            d.endAt ? fmtHM(calc.net) : "-",
-          ]
-            .map(csvEscape)
-            .join(";");
-        }),
+    const lines = [
+      ["Дата", "Статус", "Объект", "Начало", "Перерыв начало", "Перерыв конец", "Конец", "Итого минут", "Итого"].join(";"),
+      ...visibleDays.map((d) =>
         [
-          csvEscape("Итого за месяц"),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(fmtHM(totalMinutes)),
-        ].join(";"),
-      ];
+          d.dateKey,
+          d.statusText,
+          d.objectName || "",
+          d.startText,
+          d.breakStartText,
+          d.breakEndText,
+          d.endText,
+          d.totalMinutes,
+          d.totalText,
+        ].join(";")
+      ),
+    ];
 
-      downloadTextFile(
-        `accountant_${selectedWorkerId}_${monthValue}.csv`,
-        "\uFEFF" + lines.join("\n"),
-        "text/csv;charset=utf-8;"
-      );
-    } catch (e) {
-      setMsg(e?.message || "Ошибка экспорта CSV");
-    }
-  }
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
 
-  function exportPdf() {
-    try {
-      const printWindow = window.open("", "_blank", "width=1000,height=800");
-      if (!printWindow) {
-        setMsg("Браузер заблокировал окно печати.");
-        return;
-      }
-
-      let title = "";
-      let bodyHtml = "";
-
-      if (selectedWorkerId === ALL_VALUE) {
-        title = `Сводка по всем сотрудникам за ${monthValue}`;
-        bodyHtml = `
-          <table>
-            <thead>
-              <tr>
-                <th>Имя</th>
-                <th>Личный номер</th>
-                <th>Роль</th>
-                <th>Отработано дней</th>
-                <th>Отработано часов</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${summaryRows
-                .map(
-                  (r) => `
-                    <tr>
-                      <td>${htmlEscape(r.name)}</td>
-                      <td>${htmlEscape(r.personalNumber)}</td>
-                      <td>${htmlEscape(roleLabel(r.role))}</td>
-                      <td>${htmlEscape(r.workedDays)}</td>
-                      <td>${htmlEscape(fmtHM(r.totalMinutes))}</td>
-                    </tr>
-                  `
-                )
-                .join("")}
-            </tbody>
-          </table>
-        `;
-      } else {
-        const workerName = selectedPerson ? fullName(selectedPerson) : "Работник";
-        title = `Отчёт по сотруднику: ${workerName} (${monthValue})`;
-
-        bodyHtml = `
-          <div class="meta">
-            <div><b>Сотрудник:</b> ${htmlEscape(workerName)}</div>
-            <div><b>Личный номер:</b> ${htmlEscape(selectedPerson?.personalNumber || "-")}</div>
-            <div><b>Роль:</b> ${htmlEscape(roleLabel(selectedPerson?.role || "-"))}</div>
-            <div><b>Месяц:</b> ${htmlEscape(monthValue)}</div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Дата</th>
-                <th>Статус</th>
-                <th>Объект</th>
-                <th>Начало</th>
-                <th>Перерыв</th>
-                <th>Конец</th>
-                <th>Итого</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows
-                .map((d) => {
-                  const calc = calcNetMinutes(d);
-                  return `
-                    <tr>
-                      <td>${htmlEscape(d.dateKey || d.id)}</td>
-                      <td>${htmlEscape(statusLabel(d))}</td>
-                      <td>${htmlEscape(d.objectName || "-")}</td>
-                      <td>${htmlEscape(toTime(d.startAt))}</td>
-                      <td>${htmlEscape(`${toTime(d.breakStartAt)} – ${toTime(d.breakEndAt)}`)}</td>
-                      <td>${htmlEscape(toTime(d.endAt))}</td>
-                      <td>${htmlEscape(d.endAt ? fmtHM(calc.net) : "-")}</td>
-                    </tr>
-                  `;
-                })
-                .join("")}
-            </tbody>
-          </table>
-
-          <div class="total">
-            <b>Итого за месяц:</b> ${htmlEscape(fmtHM(totalMinutes))}
-          </div>
-        `;
-      }
-
-      printWindow.document.open();
-      printWindow.document.write(`
-        <!doctype html>
-        <html lang="ru">
-          <head>
-            <meta charset="utf-8" />
-            <title>${htmlEscape(title)}</title>
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                padding: 24px;
-                color: #111827;
-              }
-              h1 {
-                font-size: 22px;
-                margin-bottom: 16px;
-              }
-              .meta {
-                margin-bottom: 16px;
-                display: grid;
-                gap: 6px;
-              }
-              .total {
-                margin-top: 18px;
-                font-size: 18px;
-              }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 12px;
-              }
-              th, td {
-                border: 1px solid #d1d5db;
-                padding: 8px 10px;
-                text-align: left;
-                vertical-align: top;
-                font-size: 14px;
-              }
-              th {
-                background: #f3f4f6;
-              }
-            </style>
-          </head>
-          <body>
-            <h1>${htmlEscape(title)}</h1>
-            ${bodyHtml}
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.focus();
-
-      setTimeout(() => {
-        printWindow.print();
-      }, 300);
-    } catch (e) {
-      setMsg(e?.message || "Ошибка экспорта PDF");
-    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `workdays-${selectedUser?.personalNumber || selectedUid}-${selectedMonth || "all"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   if (loading) {
     return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
+      <main style={pageStyle}>
+        <div style={cardStyle}>Загрузка...</div>
       </main>
     );
   }
 
   return (
-    <main className={styles.page}>
-      <div className={`${styles.card} ${typo.base}`}>
-        <div className={styles.header}>
-          <div>
-            <div className={`${styles.title} ${typo.title}`}>
-              Кабинет бухгалтера
-            </div>
-            <div className={styles.subtitle}>
-              Просмотр рабочего времени сотрудников
-            </div>
-          </div>
-        </div>
+    <main style={pageStyle}>
+      <div style={cardStyle}>
+        <h1 style={titleStyle}>Просмотр рабочего времени сотрудников</h1>
 
-        <div className={styles.infoBox}>
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Работник:</span>
-            <span className={styles.value}>
+        <div style={boxStyle}>
+          <div style={grid2Style}>
+            <div>
+              <div style={labelStyle}>Работник</div>
               <select
-                value={selectedWorkerId}
-                onChange={(e) => setSelectedWorkerId(e.target.value)}
+                value={selectedUid}
+                onChange={(e) => handleUserChange(e.target.value)}
                 style={inputStyle}
               >
-                <option value={ALL_VALUE}>Все</option>
-                {people.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {fullName(w)}
-                    {w.personalNumber ? ` — ${w.personalNumber}` : ""}
-                    {w.role ? ` — ${roleLabel(w.role)}` : ""}
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {userDisplayName(u)}
                   </option>
                 ))}
               </select>
-            </span>
-          </div>
+            </div>
 
-          <div className={styles.infoRow}>
-            <span className={styles.label}>Месяц:</span>
-            <span className={styles.value}>
-              <input
-                type="month"
-                value={monthValue}
-                onChange={(e) => setMonthValue(e.target.value)}
+            <div>
+              <div style={labelStyle}>Месяц</div>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
                 style={inputStyle}
-              />
-            </span>
-          </div>
-
-          {selectedWorkerId === ALL_VALUE ? (
-            <div style={{ marginTop: 10, opacity: 0.8 }}>
-              <b>Режим:</b> сводка по всем работникам и директору
-            </div>
-          ) : selectedPerson ? (
-            <div
-              style={{
-                marginTop: 10,
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ opacity: 0.8 }}>
-                <b>Выбран:</b> {fullName(selectedPerson)}
-                {selectedPerson.personalNumber
-                  ? ` — ${selectedPerson.personalNumber}`
-                  : ""}
-                {selectedPerson.role
-                  ? ` — ${roleLabel(selectedPerson.role)}`
-                  : ""}
-              </div>
-
-              <button
-                type="button"
-                className={styles.btnSecondary}
-                onClick={() => setSelectedWorkerId(ALL_VALUE)}
               >
-                Вернуться ко всем
-              </button>
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {monthLabel(m)}
+                  </option>
+                ))}
+              </select>
             </div>
-          ) : null}
-        </div>
-
-        <div
-          style={{
-            marginTop: 16,
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            type="button"
-            className={styles.btnSecondary}
-            onClick={exportCsv}
-            disabled={
-              rowsLoading ||
-              (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
-            }
-            style={{
-              opacity:
-                rowsLoading ||
-                (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
-                  ? 0.6
-                  : 1,
-            }}
-          >
-            Экспорт CSV
-          </button>
-
-          <button
-            type="button"
-            className={styles.btnSecondary}
-            onClick={exportPdf}
-            disabled={
-              rowsLoading ||
-              (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
-            }
-            style={{
-              opacity:
-                rowsLoading ||
-                (selectedWorkerId === ALL_VALUE ? summaryRows.length === 0 : rows.length === 0)
-                  ? 0.6
-                  : 1,
-            }}
-          >
-            Экспорт PDF
-          </button>
-        </div>
-
-        {msg ? <div className={styles.msg}>{msg}</div> : null}
-
-        <div className={styles.divider} />
-
-        <div style={{ fontWeight: 800, marginBottom: 10 }}>
-          {selectedWorkerId === ALL_VALUE ? "Сводка по всем" : "Рабочие дни"}
-        </div>
-
-        {rowsLoading ? (
-          <div style={{ opacity: 0.7 }}>Загрузка данных...</div>
-        ) : selectedWorkerId === ALL_VALUE ? (
-          summaryRows.length === 0 ? (
-            <div style={{ opacity: 0.7 }}>За выбранный месяц записей нет</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {summaryRows.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setSelectedWorkerId(r.id)}
-                  style={{
-                    borderRadius: 14,
-                    border: "1px solid rgba(15,23,42,0.12)",
-                    background: "rgba(255,255,255,0.85)",
-                    padding: 14,
-                    display: "grid",
-                    gap: 8,
-                    width: "100%",
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ fontWeight: 800 }}>{r.name}</div>
-                  <div><b>Личный номер:</b> {r.personalNumber}</div>
-                  <div><b>Роль:</b> {roleLabel(r.role)}</div>
-                  <div><b>Отработано дней:</b> {r.workedDays}</div>
-                  <div><b>Отработано часов:</b> {fmtHM(r.totalMinutes)}</div>
-                  <div style={{ fontWeight: 700, color: "#1e40af", marginTop: 4 }}>
-                    Подробно
-                  </div>
-                </button>
-              ))}
-            </div>
-          )
-        ) : rows.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>За выбранный месяц записей нет</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {rows.map((d) => {
-              const calc = calcNetMinutes(d);
-
-              return (
-                <div
-                  key={d.id}
-                  style={{
-                    borderRadius: 14,
-                    border: "1px solid rgba(15,23,42,0.12)",
-                    background: "rgba(255,255,255,0.85)",
-                    padding: 14,
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ fontWeight: 800 }}>{d.dateKey || d.id}</div>
-
-                  <div><b>Статус:</b> {statusLabel(d)}</div>
-                  <div><b>Объект:</b> {d.objectName || "-"}</div>
-                  <div><b>Начало:</b> {toTime(d.startAt)}</div>
-                  <div><b>Перерыв:</b> {toTime(d.breakStartAt)} – {toTime(d.breakEndAt)}</div>
-                  <div><b>Конец:</b> {toTime(d.endAt)}</div>
-                  <div>
-                    <b>Итого:</b> {d.endAt ? fmtHM(calc.net) : "-"}
-                    {calc.br ? (
-                      <span style={{ opacity: 0.7 }}>
-                        {" "}
-                        (перерыв {fmtHM(calc.br)}
-                        {calc.shouldApplyDefault ? " по умолчанию" : ""})
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
           </div>
-        )}
 
-        {selectedWorkerId !== ALL_VALUE ? (
-          <>
-            <div className={styles.divider} />
-            <div style={{ fontWeight: 800, fontSize: 18 }}>
-              Итого за месяц: {fmtHM(totalMinutes)}
-            </div>
-          </>
-        ) : null}
+          <div style={{ marginTop: 14 }}>
+            <b>Выбран:</b> {selectedUser ? userDisplayName(selectedUser) : "-"}
+          </div>
 
-        <div className={styles.footer}>
-          <Link className={styles.link} href="/">
-            На главную
-          </Link>
+          <div style={buttonsStyle}>
+            <button type="button" onClick={exportCsv} style={buttonStyle}>
+              Экспорт CSV
+            </button>
+
+            <button type="button" onClick={() => window.print()} style={buttonStyle}>
+              Экспорт PDF
+            </button>
+          </div>
+        </div>
+
+        {msg ? <div style={msgStyle}>{msg}</div> : null}
+
+        <h2 style={{ marginTop: 22 }}>Рабочие дни</h2>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {visibleDays.length === 0 ? (
+            <div style={boxStyle}>Записей нет</div>
+          ) : (
+            visibleDays.map((d) => (
+              <div key={d.id} style={dayStyle}>
+                <div style={topRowStyle}>
+                  <b>{d.dateKey}</b>
+                  <span>{d.statusText}</span>
+                </div>
+
+                <div><b>Объект:</b> {d.objectName || "-"}</div>
+                <div><b>Начало:</b> {d.startText}</div>
+                <div><b>Перерыв:</b> {d.breakStartText} - {d.breakEndText}</div>
+                <div><b>Конец:</b> {d.endText}</div>
+                <div>
+                  <b>Итого:</b>{" "}
+                  {d.endText !== "-"
+                    ? `${d.totalText} (перерыв ${DEFAULT_BREAK_MINUTES} мин по умолчанию)`
+                    : "-"}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <h2 style={{ marginTop: 22 }}>
+          Итого за месяц: {formatMinutes(totalMonthMinutes)}
+        </h2>
+
+        <div style={{ marginTop: 16 }}>
+          <Link href="/">На главную</Link>
         </div>
       </div>
     </main>
   );
 }
+
+const pageStyle = {
+  minHeight: "100vh",
+  padding: 20,
+};
+
+const cardStyle = {
+  maxWidth: 1100,
+  margin: "0 auto",
+  padding: 24,
+  borderRadius: 24,
+  background: "rgba(255,255,255,0.82)",
+};
+
+const titleStyle = {
+  marginTop: 0,
+};
+
+const boxStyle = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.75)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const grid2Style = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: 14,
+};
+
+const labelStyle = {
+  fontWeight: 700,
+  marginBottom: 6,
+};
+
 const inputStyle = {
   width: "100%",
-  padding: "10px 12px",
+  minHeight: 46,
   borderRadius: 12,
-  border: "1px solid rgba(15, 23, 42, 0.18)",
+  border: "1px solid rgba(15,23,42,0.14)",
   background: "#fff",
-  outline: "none",
+  padding: "0 12px",
+};
+
+const buttonsStyle = {
+  display: "flex",
+  gap: 12,
+  flexWrap: "wrap",
+  marginTop: 16,
+};
+
+const buttonStyle = {
+  border: "1px solid rgba(15,23,42,0.12)",
+  borderRadius: 12,
+  padding: "10px 14px",
+  background: "rgba(255,255,255,0.9)",
+  cursor: "pointer",
+};
+
+const msgStyle = {
+  marginTop: 14,
+  padding: 12,
+  borderRadius: 14,
+  background: "rgba(255,245,230,0.9)",
+};
+
+const dayStyle = {
+  padding: 14,
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.75)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const topRowStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 8,
 };
