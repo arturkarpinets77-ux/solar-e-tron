@@ -1,87 +1,31 @@
-// pages/worker/history.js
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
 import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+
+import s from "../../styles/worker.module.css";
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-} from "firebase/firestore";
-
-import styles from "../../styles/worker.module.css";
-import typo from "../../styles/typography.module.css";
-
-const DEFAULT_BREAK_MINUTES = 30;
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-function toTime(ts) {
-  if (!ts) return "-";
-  try {
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
-    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  } catch {
-    return "-";
-  }
-}
-
-function minutesBetween(a, b) {
-  if (!a || !b) return 0;
-  try {
-    const da = a.toDate ? a.toDate() : new Date(a);
-    const db = b.toDate ? b.toDate() : new Date(b);
-    return Math.max(0, Math.round((db - da) / 60000));
-  } catch {
-    return 0;
-  }
-}
-
-function fmtHM(totalMinutes) {
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}ч ${pad2(m)}м`;
-}
-
-function statusLabel(d) {
-  const ended = !!d?.endAt;
-  const started = !!d?.startAt;
-  const bS = !!d?.breakStartAt;
-  const bE = !!d?.breakEndAt;
-
-  if (ended) return "Завершён";
-  if (bS && !bE) return "Перерыв";
-  if (started) return "Идёт";
-  return "Не начат";
-}
+  DEFAULT_BREAK_MINUTES,
+  normalizeWorkday,
+  sortWorkdaysDesc,
+} from "../../lib/workdayUtils";
 
 export default function WorkerHistoryPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
-  const [profile, setProfile] = useState(null);
-  const [rows, setRows] = useState([]);
-
-  const workdaysCol = useMemo(() => {
-    if (!db || !profile?.uid) return null;
-    return collection(db, "Users", profile.uid, "Workdays");
-  }, [profile?.uid]);
+  const [days, setDays] = useState([]);
 
   useEffect(() => {
     if (!auth || !db) return;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      setMsg("");
       setLoading(true);
+      setMsg("");
 
       if (!user) {
         router.replace("/login");
@@ -89,25 +33,37 @@ export default function WorkerHistoryPage() {
       }
 
       try {
-        const snap = await getDoc(doc(db, "Users", user.uid));
-        if (!snap.exists()) {
+        const userSnap = await getDoc(doc(db, "Users", user.uid));
+        if (!userSnap.exists()) {
           await signOut(auth);
           router.replace("/login");
           return;
         }
 
-        const data = snap.data() || {};
-        const role = String(data.role || "").trim().toLowerCase();
-        const status = String(data.status || "").trim().toLowerCase();
+        const userData = userSnap.data() || {};
+        const role = String(userData.role || "").toLowerCase();
+        const status = String(userData.status || "").toLowerCase();
 
-        if (status !== "active" || role !== "worker") {
+        if (status !== "active") {
           router.replace("/dashboard");
           return;
         }
 
-        setProfile({ uid: user.uid });
+        if (role !== "worker") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        const snap = await getDocs(collection(db, "Users", user.uid, "Workdays"));
+
+        const list = snap.docs
+          .map((d) => normalizeWorkday(d.id, d.data()))
+          .sort(sortWorkdaysDesc)
+          .slice(0, 31);
+
+        setDays(list);
       } catch (e) {
-        setMsg(e?.message || "Ошибка загрузки профиля");
+        setMsg(e?.message || "Ошибка загрузки истории рабочего времени");
       } finally {
         setLoading(false);
       }
@@ -116,144 +72,120 @@ export default function WorkerHistoryPage() {
     return () => unsub();
   }, [router]);
 
-  useEffect(() => {
-    (async () => {
-      if (!workdaysCol) return;
-      setMsg("");
-      setLoading(true);
-
-      try {
-        const q = query(workdaysCol, orderBy("dateKey", "desc"), limit(31));
-        const snaps = await getDocs(q);
-
-        const list = snaps.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setRows(list);
-      } catch (e) {
-        setMsg(e?.message || "Ошибка загрузки истории");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [workdaysCol]);
-
   if (loading) {
     return (
-      <main className={styles.page}>
-        <div className={`${styles.card} ${typo.base}`}>Загрузка...</div>
+      <main className={s.page}>
+        <div className={s.card}>Загрузка...</div>
       </main>
     );
   }
 
   return (
-    <main className={styles.page}>
-      <div className={`${styles.card} ${typo.base}`}>
-        <div className={styles.header}>
+    <main className={s.page}>
+      <div className={s.card}>
+        <div className={s.header}>
           <div>
-            <div className={`${styles.title} ${typo.title}`}>
-              История рабочего времени
-            </div>
-            <div className={styles.subtitle}>Последние 31 день</div>
+            <h1 className={s.title}>История рабочего времени</h1>
+            <div className={s.subtitle}>Последние 31 день</div>
           </div>
         </div>
 
-        {msg ? <div className={styles.msg}>{msg}</div> : null}
+        {msg ? <div style={msgStyle}>{msg}</div> : null}
 
-        <div className={styles.infoBox} style={{ marginTop: 14 }}>
-          {rows.length === 0 ? (
-            <div>Записей пока нет.</div>
+        <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
+          {days.length === 0 ? (
+            <div style={emptyStyle}>Записей пока нет</div>
           ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {rows.map((d) => {
-                const start = d.startAt;
-                const end = d.endAt;
-                const bS = d.breakStartAt;
-                const bE = d.breakEndAt;
+            days.map((day) => (
+              <div key={day.id} style={dayCardStyle}>
+                <div style={topRowStyle}>
+                  <b>{day.dateKey}</b>
+                  <span>{day.statusText}</span>
+                </div>
 
-                const total = minutesBetween(start, end);
+                <div style={rowStyle}>
+                  <span>Объект</span>
+                  <b>{day.objectName || "-"}</b>
+                </div>
 
-                // Фактический перерыв (если отмечали)
-                const brActual = minutesBetween(bS, bE);
+                <div style={rowStyle}>
+                  <span>Начало</span>
+                  <b>{day.startText}</b>
+                </div>
 
-                // Если перерыв НЕ отмечали вообще — вычитаем по умолчанию 30 минут (только для завершённого дня)
-                const noBreakMarked = !bS && !bE;
-                const shouldApplyDefault = !!end && noBreakMarked;
+                <div style={rowStyle}>
+                  <span>Перерыв</span>
+                  <b>
+                    {day.breakStartText} - {day.breakEndText}
+                  </b>
+                </div>
 
-                const br = shouldApplyDefault ? DEFAULT_BREAK_MINUTES : brActual;
-                const net = Math.max(0, total - br);
+                <div style={rowStyle}>
+                  <span>Конец</span>
+                  <b>{day.endText}</b>
+                </div>
 
-                return (
-                  <div
-                    key={d.id}
-                    style={{
-                      border: "1px solid rgba(15, 23, 42, 0.10)",
-                      borderRadius: 14,
-                      padding: 14,
-                      background: "rgba(255,255,255,0.78)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <b>{d.dateKey || d.id}</b>
-                      <span style={{ opacity: 0.75 }}>{statusLabel(d)}</span>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 8,
-                        display: "grid",
-                        gridTemplateColumns: "140px 1fr",
-                        gap: "6px 12px",
-                        alignItems: "baseline",
-                      }}
-                    >
-                      <div style={{ opacity: 0.75 }}>Начало</div>
-                      <div>{toTime(start)}</div>
-
-                      <div style={{ opacity: 0.75 }}>Перерыв</div>
-                      <div>
-                        {toTime(bS)} – {toTime(bE)}
-                      </div>
-
-                      <div style={{ opacity: 0.75 }}>Конец</div>
-                      <div>{toTime(end)}</div>
-
-                      <div style={{ opacity: 0.75 }}>Итого</div>
-                      <div>
-                        {end ? (
-                          <>
-                            {fmtHM(net)}
-                            {br ? (
-                              <span style={{ opacity: 0.7 }}>
-                                {" "}
-                                (перерыв {fmtHM(br)}
-                                {shouldApplyDefault ? " по умолчанию" : ""})
-                              </span>
-                            ) : null}
-                          </>
-                        ) : (
-                          "-"
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                <div style={rowStyle}>
+                  <span>Итого</span>
+                  <b>
+                    {day.endText !== "-"
+                      ? `${day.totalText} (обед ${DEFAULT_BREAK_MINUTES} мин по умолчанию)`
+                      : "-"}
+                  </b>
+                </div>
+              </div>
+            ))
           )}
         </div>
 
-        <div className={styles.footer}>
-          <Link href="/worker" className={styles.link}>
-            ← Назад
-          </Link>
+        <div style={footerStyle}>
+          <Link href="/worker">← Назад</Link>
         </div>
       </div>
     </main>
   );
 }
+
+const msgStyle = {
+  marginTop: 14,
+  padding: 12,
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.85)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const emptyStyle = {
+  padding: 16,
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.82)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const dayCardStyle = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.82)",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const topRowStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 12,
+  fontSize: 18,
+};
+
+const rowStyle = {
+  display: "grid",
+  gridTemplateColumns: "140px 1fr",
+  gap: 10,
+  marginBottom: 8,
+};
+
+const footerStyle = {
+  display: "flex",
+  gap: 16,
+  flexWrap: "wrap",
+  marginTop: 18,
+};
