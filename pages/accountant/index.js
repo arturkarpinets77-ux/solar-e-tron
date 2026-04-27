@@ -15,10 +15,21 @@ import {
   sortWorkdaysDesc,
 } from "../../lib/workdayUtils";
 
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "worker") return "Работник";
+  if (value === "director") return "Директор";
+  if (value === "admin") return "Администратор";
+  if (value === "accountant") return "Бухгалтер";
+
+  return role || "-";
+}
+
 function userDisplayName(user) {
   const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
   const personal = user.personalNumber ? ` — ${user.personalNumber}` : "";
-  const role = user.role ? ` — ${user.role}` : "";
+  const role = user.role ? ` — ${roleLabel(user.role)}` : "";
   return `${name || user.email || user.id}${personal}${role}`;
 }
 
@@ -64,6 +75,7 @@ export default function AccountantPage() {
 
       try {
         const snap = await getDoc(doc(db, "Users", user.uid));
+
         if (!snap.exists()) {
           await signOut(auth);
           router.replace("/login");
@@ -100,19 +112,21 @@ export default function AccountantPage() {
 
     const list = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((u) => String(u.status || "").toLowerCase() === "active")
+      .filter((u) => {
+        const status = String(u.status || "").toLowerCase();
+        const role = String(u.role || "").toLowerCase();
+
+        return (
+          status === "active" &&
+          (role === "worker" || role === "director" || role === "admin")
+        );
+      })
       .sort((a, b) => userDisplayName(a).localeCompare(userDisplayName(b), "ru"));
 
     setUsers(list);
-
-    if (list.length > 0) {
-      const firstWorker =
-        list.find((u) => String(u.role || "").toLowerCase() === "worker") ||
-        list[0];
-
-      setSelectedUid(firstWorker.id);
-      await loadWorkdays(firstWorker.id);
-    }
+    setSelectedUid("");
+    setAllDays([]);
+    setSelectedMonth("");
   }
 
   async function loadWorkdays(uid) {
@@ -129,21 +143,33 @@ export default function AccountantPage() {
 
       const months = Array.from(
         new Set(list.map((d) => getMonthKey(d.dateKey)).filter(Boolean))
-      ).sort().reverse();
+      )
+        .sort()
+        .reverse();
 
       setSelectedMonth(months[0] || "");
     } catch (e) {
       setAllDays([]);
+      setSelectedMonth("");
       setMsg(e?.message || "Ошибка загрузки рабочих дней");
     }
   }
 
-  async function handleUserChange(uid) {
+  async function handleSelectUser(uid) {
     setSelectedUid(uid);
     await loadWorkdays(uid);
   }
 
+  function backToUsers() {
+    setSelectedUid("");
+    setAllDays([]);
+    setSelectedMonth("");
+    setMsg("");
+  }
+
   function exportCsv() {
+    if (!selectedUser) return;
+
     const lines = [
       [
         "Дата",
@@ -198,109 +224,164 @@ export default function AccountantPage() {
       <div style={cardStyle}>
         <h1 style={titleStyle}>Просмотр рабочего времени сотрудников</h1>
 
-        <div style={boxStyle}>
-          <div style={grid2Style}>
-            <div>
-              <div style={labelStyle}>Работник</div>
-              <select
-                value={selectedUid}
-                onChange={(e) => handleUserChange(e.target.value)}
-                style={inputStyle}
-              >
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {userDisplayName(u)}
-                  </option>
-                ))}
-              </select>
+        {!selectedUser ? (
+          <>
+            <div style={boxStyle}>
+              <h2 style={sectionTitleStyle}>Список работников</h2>
+
+              {users.length === 0 ? (
+                <div style={emptyStyle}>Работников пока нет</div>
+              ) : (
+                <div style={usersGridStyle}>
+                  {users.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => handleSelectUser(u.id)}
+                      style={userButtonStyle}
+                    >
+                      <div style={{ fontWeight: 800 }}>
+                        {`${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+                          u.email ||
+                          u.id}
+                      </div>
+
+                      <div style={{ opacity: 0.8 }}>
+                        Личный номер: {u.personalNumber || "-"}
+                      </div>
+
+                      <div style={{ opacity: 0.8 }}>
+                        Роль: {roleLabel(u.role)}
+                      </div>
+
+                      <div style={{ opacity: 0.8 }}>
+                        E-mail: {u.email || "-"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div>
-              <div style={labelStyle}>Месяц</div>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                style={inputStyle}
-              >
-                {monthOptions.length === 0 ? (
-                  <option value="">Нет месяцев</option>
-                ) : (
-                  monthOptions.map((m) => (
-                    <option key={m} value={m}>
-                      {monthLabel(m)}
-                    </option>
-                  ))
-                )}
-              </select>
+            {msg ? <div style={msgStyle}>{msg}</div> : null}
+
+            <div style={{ marginTop: 16 }}>
+              <Link href="/" style={linkStyle}>
+                На главную
+              </Link>
             </div>
-          </div>
-
-          <div style={{ marginTop: 14, color: "#111827" }}>
-            <b>Выбран:</b> {selectedUser ? userDisplayName(selectedUser) : "-"}
-          </div>
-
-          <div style={buttonsStyle}>
-            <button type="button" onClick={exportCsv} style={buttonStyle}>
-              Экспорт CSV
-            </button>
-
-            <button type="button" onClick={() => window.print()} style={buttonStyle}>
-              Экспорт PDF
-            </button>
-          </div>
-        </div>
-
-        {msg ? <div style={msgStyle}>{msg}</div> : null}
-
-        <h2 style={sectionTitleStyle}>Рабочие дни</h2>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          {visibleDays.length === 0 ? (
-            <div style={boxStyle}>Записей нет</div>
-          ) : (
-            visibleDays.map((d) => (
-              <div key={d.id} style={dayStyle}>
-                <div style={topRowStyle}>
-                  <b>{d.dateKey}</b>
-                  <span>{d.statusText}</span>
+          </>
+        ) : (
+          <>
+            <div style={boxStyle}>
+              <div style={grid2Style}>
+                <div>
+                  <div style={labelStyle}>Работник</div>
+                  <select
+                    value={selectedUid}
+                    onChange={(e) => handleSelectUser(e.target.value)}
+                    style={inputStyle}
+                  >
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {userDisplayName(u)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
-                  <b>Объект:</b> {d.objectName || "-"}
-                </div>
-
-                <div>
-                  <b>Начало:</b> {d.startText}
-                </div>
-
-                <div>
-                  <b>Перерыв:</b> {d.breakStartText} - {d.breakEndText}
-                </div>
-
-                <div>
-                  <b>Конец:</b> {d.endText}
-                </div>
-
-                <div>
-                  <b>Итого:</b>{" "}
-                  {d.endText !== "-"
-                    ? `${d.totalText} (перерыв ${DEFAULT_BREAK_MINUTES} мин по умолчанию)`
-                    : "-"}
+                  <div style={labelStyle}>Месяц</div>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    style={inputStyle}
+                  >
+                    {monthOptions.length === 0 ? (
+                      <option value="">Нет месяцев</option>
+                    ) : (
+                      monthOptions.map((m) => (
+                        <option key={m} value={m}>
+                          {monthLabel(m)}
+                        </option>
+                      ))
+                    )}
+                  </select>
                 </div>
               </div>
-            ))
-          )}
-        </div>
 
-        <h2 style={sectionTitleStyle}>
-          Итого за месяц: {formatMinutes(totalMonthMinutes)}
-        </h2>
+              <div style={{ marginTop: 14, color: "#111827" }}>
+                <b>Выбран:</b> {userDisplayName(selectedUser)}
+              </div>
 
-        <div style={{ marginTop: 16 }}>
-          <Link href="/" style={linkStyle}>
-            На главную
-          </Link>
-        </div>
+              <div style={buttonsStyle}>
+                <button type="button" onClick={backToUsers} style={buttonStyle}>
+                  Вернуться ко всем
+                </button>
+
+                <button type="button" onClick={exportCsv} style={buttonStyle}>
+                  Экспорт CSV
+                </button>
+
+                <button type="button" onClick={() => window.print()} style={buttonStyle}>
+                  Экспорт PDF
+                </button>
+              </div>
+            </div>
+
+            {msg ? <div style={msgStyle}>{msg}</div> : null}
+
+            <h2 style={sectionTitleStyle}>Рабочие дни</h2>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              {visibleDays.length === 0 ? (
+                <div style={boxStyle}>Записей нет</div>
+              ) : (
+                visibleDays.map((d) => (
+                  <div key={d.id} style={dayStyle}>
+                    <div style={topRowStyle}>
+                      <b>{d.dateKey}</b>
+                      <span>{d.statusText}</span>
+                    </div>
+
+                    <div>
+                      <b>Объект:</b> {d.objectName || "-"}
+                    </div>
+
+                    <div>
+                      <b>Начало:</b> {d.startText}
+                    </div>
+
+                    <div>
+                      <b>Перерыв:</b> {d.breakStartText} - {d.breakEndText}
+                    </div>
+
+                    <div>
+                      <b>Конец:</b> {d.endText}
+                    </div>
+
+                    <div>
+                      <b>Итого:</b>{" "}
+                      {d.endText !== "-"
+                        ? `${d.totalText} (перерыв ${DEFAULT_BREAK_MINUTES} мин по умолчанию)`
+                        : "-"}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <h2 style={sectionTitleStyle}>
+              Итого за месяц: {formatMinutes(totalMonthMinutes)}
+            </h2>
+
+            <div style={{ marginTop: 16 }}>
+              <Link href="/" style={linkStyle}>
+                На главную
+              </Link>
+            </div>
+          </>
+        )}
       </div>
     </main>
   );
@@ -328,7 +409,8 @@ const titleStyle = {
 };
 
 const sectionTitleStyle = {
-  marginTop: 22,
+  marginTop: 0,
+  marginBottom: 16,
   color: "#111827",
   fontWeight: 800,
 };
@@ -360,6 +442,31 @@ const inputStyle = {
   border: "1px solid rgba(15,23,42,0.14)",
   background: "#fff",
   padding: "0 12px",
+  color: "#111827",
+};
+
+const usersGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: 12,
+};
+
+const userButtonStyle = {
+  textAlign: "left",
+  padding: 14,
+  borderRadius: 16,
+  border: "1px solid rgba(15,23,42,0.10)",
+  background: "rgba(255,255,255,0.92)",
+  color: "#111827",
+  cursor: "pointer",
+  display: "grid",
+  gap: 6,
+};
+
+const emptyStyle = {
+  padding: 14,
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.9)",
   color: "#111827",
 };
 
