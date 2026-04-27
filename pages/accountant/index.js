@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import { auth, db } from "../lib/firebaseClient";
+import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 
@@ -13,7 +13,7 @@ import {
   monthLabel,
   normalizeWorkday,
   sortWorkdaysDesc,
-} from "../lib/workdayUtils";
+} from "../../lib/workdayUtils";
 
 function userDisplayName(user) {
   const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
