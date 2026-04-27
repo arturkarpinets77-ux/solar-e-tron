@@ -19,7 +19,6 @@ import {
 import s from "../../styles/worker.module.css";
 import {
   DEFAULT_BREAK_MINUTES,
-  getNowTimeString,
   getTodayKey,
   normalizeWorkday,
 } from "../../lib/workdayUtils";
@@ -47,14 +46,14 @@ function getObjectGeo(objectItem) {
     objectItem.radius ??
     objectItem.objectGeo?.radiusMeters ??
     objectItem.geo?.radiusMeters ??
-    null;
+    500;
 
   if (lat === null || lng === null) return null;
 
   return {
     lat: Number(lat),
     lng: Number(lng),
-    radiusMeters: Number(radiusMeters || 0),
+    radiusMeters: Number(radiusMeters || 500),
   };
 }
 
@@ -76,11 +75,46 @@ function getBrowserGeo() {
       () => resolve(null),
       {
         enableHighAccuracy: true,
-        timeout: 12000,
+        timeout: 15000,
         maximumAge: 0,
       }
     );
   });
+}
+
+function distanceMeters(pointA, pointB) {
+  if (!pointA || !pointB) return null;
+
+  const lat1 = Number(pointA.lat);
+  const lng1 = Number(pointA.lng);
+  const lat2 = Number(pointB.lat);
+  const lng2 = Number(pointB.lng);
+
+  if (
+    !Number.isFinite(lat1) ||
+    !Number.isFinite(lng1) ||
+    !Number.isFinite(lat2) ||
+    !Number.isFinite(lng2)
+  ) {
+    return null;
+  }
+
+  const R = 6371000;
+  const toRad = (value) => (value * Math.PI) / 180;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
 }
 
 export default function WorkerWorkdayPage() {
@@ -184,6 +218,7 @@ export default function WorkerWorkdayPage() {
       }));
 
       const uniqueMap = new Map();
+
       [...activeList, ...reworkList].forEach((item) => {
         uniqueMap.set(item.id, item);
       });
@@ -234,19 +269,51 @@ export default function WorkerWorkdayPage() {
     if (!profile?.uid) return;
 
     const objectItem = selectedObject();
+
     if (!objectItem) {
       setMsg("Сначала выбери объект.");
       return;
     }
 
-    const now = new Date();
-    const userGeo = await getBrowserGeo();
     const objectGeo = getObjectGeo(objectItem);
 
+    if (!objectGeo) {
+      setMsg("У объекта нет координат. Начать рабочий день невозможно.");
+      return;
+    }
+
     setSaving(true);
-    setMsg("");
+    setMsg("Проверяю геолокацию...");
 
     try {
+      const userGeo = await getBrowserGeo();
+
+      if (!userGeo) {
+        setMsg(
+          "Не удалось получить геолокацию телефона. Разреши доступ к местоположению и попробуй снова."
+        );
+        setSaving(false);
+        return;
+      }
+
+      const distance = distanceMeters(userGeo, objectGeo);
+      const allowedRadius = Number(objectGeo.radiusMeters || 500);
+
+      if (distance === null) {
+        setMsg("Не удалось рассчитать расстояние до объекта.");
+        setSaving(false);
+        return;
+      }
+
+      if (distance > allowedRadius) {
+        setMsg(
+          `Ты находишься примерно в ${distance} м от объекта. Разрешённый радиус: ${allowedRadius} м. Начать рабочий день можно только на объекте.`
+        );
+        setSaving(false);
+        return;
+      }
+
+      const now = new Date();
       const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
       await setDoc(
@@ -268,6 +335,7 @@ export default function WorkerWorkdayPage() {
           startGeo: userGeo,
           endGeo: null,
 
+          startDistanceMeters: distance,
           defaultBreakMinutes: DEFAULT_BREAK_MINUTES,
 
           createdAt: serverTimestamp(),
@@ -349,22 +417,34 @@ export default function WorkerWorkdayPage() {
     if (!profile?.uid || !todayWorkday) return;
 
     const now = new Date();
-    const userGeo = await getBrowserGeo();
 
     setSaving(true);
-    setMsg("");
+    setMsg("Сохраняю завершение рабочего дня...");
 
     try {
+      const userGeo = await getBrowserGeo();
+      const objectGeo =
+        todayWorkday.objectGeo ||
+        getObjectGeo(selectedObject()) ||
+        null;
+
+      const endDistanceMeters =
+        userGeo && objectGeo ? distanceMeters(userGeo, objectGeo) : null;
+
       const ref = doc(db, "Users", profile.uid, "Workdays", todayKey);
 
       const payload = {
         status: "ended",
         endAt: Timestamp.fromDate(now),
         endGeo: userGeo,
+        endDistanceMeters,
         updatedAt: serverTimestamp(),
       };
 
-      if (String(todayWorkday.status || "") === "break" && !todayWorkday.breakEndAt) {
+      if (
+        String(todayWorkday.status || "") === "break" &&
+        !todayWorkday.breakEndAt
+      ) {
         payload.breakEndAt = Timestamp.fromDate(now);
       }
 
@@ -382,7 +462,12 @@ export default function WorkerWorkdayPage() {
   const currentStatus = String(todayWorkday?.status || "");
   const canStartDay = !todayWorkday || !currentStatus || currentStatus === "ended";
   const canChangeObject = canStartDay;
-  const canStartBreak = currentStatus === "started" && !todayWorkday?.breakStartAt && !todayWorkday?.breakStartTime;
+
+  const canStartBreak =
+    currentStatus === "started" &&
+    !todayWorkday?.breakStartAt &&
+    !todayWorkday?.breakStartTime;
+
   const canEndBreak = currentStatus === "break";
   const canEndDay = currentStatus === "started" || currentStatus === "break";
 
