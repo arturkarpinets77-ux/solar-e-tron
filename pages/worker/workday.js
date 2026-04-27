@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
+  Timestamp,
   collection,
   doc,
   getDoc,
@@ -16,30 +17,70 @@ import {
 } from "firebase/firestore";
 
 import s from "../../styles/worker.module.css";
+import {
+  DEFAULT_BREAK_MINUTES,
+  getNowTimeString,
+  getTodayKey,
+  normalizeWorkday,
+} from "../../lib/workdayUtils";
 
-function getTodayKey() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function getObjectGeo(objectItem) {
+  if (!objectItem) return null;
+
+  const lat =
+    objectItem.lat ??
+    objectItem.latitude ??
+    objectItem.objectGeo?.lat ??
+    objectItem.geo?.lat ??
+    null;
+
+  const lng =
+    objectItem.lng ??
+    objectItem.lon ??
+    objectItem.longitude ??
+    objectItem.objectGeo?.lng ??
+    objectItem.geo?.lng ??
+    null;
+
+  const radiusMeters =
+    objectItem.radiusMeters ??
+    objectItem.radius ??
+    objectItem.objectGeo?.radiusMeters ??
+    objectItem.geo?.radiusMeters ??
+    null;
+
+  if (lat === null || lng === null) return null;
+
+  return {
+    lat: Number(lat),
+    lng: Number(lng),
+    radiusMeters: Number(radiusMeters || 0),
+  };
 }
 
-function getNowTime() {
-  const now = new Date();
-  const h = String(now.getHours()).padStart(2, "0");
-  const m = String(now.getMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
-}
+function getBrowserGeo() {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
 
-function dayStatusLabel(status) {
-  const value = String(status || "").toLowerCase();
-
-  if (value === "started") return "В работе";
-  if (value === "break") return "На перерыве";
-  if (value === "ended") return "Завершён";
-
-  return "Не начат";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy || null,
+        });
+      },
+      () => resolve(null),
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }
+    );
+  });
 }
 
 export default function WorkerWorkdayPage() {
@@ -55,6 +96,11 @@ export default function WorkerWorkdayPage() {
   const [selectedObjectId, setSelectedObjectId] = useState("");
 
   const todayKey = useMemo(() => getTodayKey(), []);
+
+  const normalized = useMemo(() => {
+    if (!todayWorkday) return null;
+    return normalizeWorkday(todayWorkday.id, todayWorkday);
+  }, [todayWorkday]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -193,6 +239,10 @@ export default function WorkerWorkdayPage() {
       return;
     }
 
+    const now = new Date();
+    const userGeo = await getBrowserGeo();
+    const objectGeo = getObjectGeo(objectItem);
+
     setSaving(true);
     setMsg("");
 
@@ -202,13 +252,26 @@ export default function WorkerWorkdayPage() {
       await setDoc(
         ref,
         {
+          dateKey: todayKey,
           date: todayKey,
+          status: "started",
+
           objectId: objectItem.id,
           objectName: String(objectItem.name || objectItem.id),
-          status: "started",
-          startTime: getNowTime(),
-          updatedAt: serverTimestamp(),
+          objectGeo,
+
+          startAt: Timestamp.fromDate(now),
+          breakStartAt: null,
+          breakEndAt: null,
+          endAt: null,
+
+          startGeo: userGeo,
+          endGeo: null,
+
+          defaultBreakMinutes: DEFAULT_BREAK_MINUTES,
+
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
@@ -225,6 +288,8 @@ export default function WorkerWorkdayPage() {
   async function handleStartBreak() {
     if (!profile?.uid || !todayWorkday) return;
 
+    const now = new Date();
+
     setSaving(true);
     setMsg("");
 
@@ -235,7 +300,7 @@ export default function WorkerWorkdayPage() {
         ref,
         {
           status: "break",
-          breakStartTime: getNowTime(),
+          breakStartAt: Timestamp.fromDate(now),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -253,6 +318,8 @@ export default function WorkerWorkdayPage() {
   async function handleEndBreak() {
     if (!profile?.uid || !todayWorkday) return;
 
+    const now = new Date();
+
     setSaving(true);
     setMsg("");
 
@@ -263,7 +330,7 @@ export default function WorkerWorkdayPage() {
         ref,
         {
           status: "started",
-          breakEndTime: getNowTime(),
+          breakEndAt: Timestamp.fromDate(now),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -279,7 +346,10 @@ export default function WorkerWorkdayPage() {
   }
 
   async function handleEndDay() {
-    if (!profile?.uid) return;
+    if (!profile?.uid || !todayWorkday) return;
+
+    const now = new Date();
+    const userGeo = await getBrowserGeo();
 
     setSaving(true);
     setMsg("");
@@ -289,12 +359,13 @@ export default function WorkerWorkdayPage() {
 
       const payload = {
         status: "ended",
-        endTime: getNowTime(),
+        endAt: Timestamp.fromDate(now),
+        endGeo: userGeo,
         updatedAt: serverTimestamp(),
       };
 
-      if (todayWorkday?.status === "break" && !todayWorkday?.breakEndTime) {
-        payload.breakEndTime = getNowTime();
+      if (String(todayWorkday.status || "") === "break" && !todayWorkday.breakEndAt) {
+        payload.breakEndAt = Timestamp.fromDate(now);
       }
 
       await setDoc(ref, payload, { merge: true });
@@ -311,15 +382,9 @@ export default function WorkerWorkdayPage() {
   const currentStatus = String(todayWorkday?.status || "");
   const canStartDay = !todayWorkday || !currentStatus || currentStatus === "ended";
   const canChangeObject = canStartDay;
-  const canStartBreak =
-    currentStatus === "started" &&
-    !todayWorkday?.breakStartTime;
-  const canEndBreak =
-    currentStatus === "break" &&
-    !!todayWorkday?.breakStartTime &&
-    !todayWorkday?.breakEndTime;
-  const canEndDay =
-    currentStatus === "started" || currentStatus === "break";
+  const canStartBreak = currentStatus === "started" && !todayWorkday?.breakStartAt && !todayWorkday?.breakStartTime;
+  const canEndBreak = currentStatus === "break";
+  const canEndDay = currentStatus === "started" || currentStatus === "break";
 
   if (loading) {
     return (
@@ -366,27 +431,36 @@ export default function WorkerWorkdayPage() {
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Статус дня:</span>
-            <span style={valueStyle}>{dayStatusLabel(todayWorkday?.status)}</span>
+            <span style={valueStyle}>{normalized?.statusText || "Не начат"}</span>
           </div>
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Начало:</span>
-            <span style={valueStyle}>{todayWorkday?.startTime || "-"}</span>
+            <span style={valueStyle}>{normalized?.startText || "-"}</span>
           </div>
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Начало перерыва:</span>
-            <span style={valueStyle}>{todayWorkday?.breakStartTime || "-"}</span>
+            <span style={valueStyle}>{normalized?.breakStartText || "-"}</span>
           </div>
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Конец перерыва:</span>
-            <span style={valueStyle}>{todayWorkday?.breakEndTime || "-"}</span>
+            <span style={valueStyle}>{normalized?.breakEndText || "-"}</span>
           </div>
 
           <div style={infoRowStyle}>
             <span style={labelStyle}>Конец дня:</span>
-            <span style={valueStyle}>{todayWorkday?.endTime || "-"}</span>
+            <span style={valueStyle}>{normalized?.endText || "-"}</span>
+          </div>
+
+          <div style={infoRowStyle}>
+            <span style={labelStyle}>Итого:</span>
+            <span style={valueStyle}>
+              {normalized?.endText && normalized.endText !== "-"
+                ? `${normalized.totalText} (обед ${DEFAULT_BREAK_MINUTES} мин, если перерыв не отмечен)`
+                : "-"}
+            </span>
           </div>
         </div>
 
