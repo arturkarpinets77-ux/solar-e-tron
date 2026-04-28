@@ -54,12 +54,14 @@ const BASE_CATEGORY_DEFAULTS = [
 
 function mergeCategories(dbCategories) {
   const byCode = new Map();
+
   dbCategories.forEach((item) => {
     if (item.code) byCode.set(item.code, item);
   });
 
   const base = BASE_CATEGORY_DEFAULTS.map((item) => {
     const saved = byCode.get(item.code);
+
     return saved
       ? {
           ...item,
@@ -90,10 +92,73 @@ function buildConstructionNumbers(start, end) {
   }
 
   const list = [];
+
   for (let i = startNum; i <= endNum; i += 1) {
     list.push(i);
   }
+
   return list;
+}
+
+function getDefaultPanelsPerConstruction(objectItem) {
+  if (!objectItem) return 56;
+
+  const directValue =
+    objectItem.panelsPerConstruction ??
+    objectItem.defaultPanelsPerConstruction ??
+    objectItem.panelCountPerConstruction ??
+    objectItem.panelsCountPerConstruction ??
+    objectItem.panelsPerFrame ??
+    objectItem.defaultPanelsCount ??
+    objectItem.panelsOnConstruction ??
+    null;
+
+  const directNumber = Number(directValue);
+
+  if (Number.isFinite(directNumber) && directNumber > 0) {
+    return directNumber;
+  }
+
+  const planPanels = Number(
+    objectItem.mapPlanPanels ??
+      objectItem.planPanels ??
+      objectItem.panelsTotal ??
+      objectItem.totalPanels ??
+      0
+  );
+
+  const planConstructions = Number(
+    objectItem.mapPlanConstructions ??
+      objectItem.planConstructions ??
+      objectItem.constructionsTotal ??
+      objectItem.totalConstructions ??
+      0
+  );
+
+  if (
+    Number.isFinite(planPanels) &&
+    Number.isFinite(planConstructions) &&
+    planPanels > 0 &&
+    planConstructions > 0
+  ) {
+    return Math.round(planPanels / planConstructions);
+  }
+
+  return 56;
+}
+
+function normalizePanelQuantity(value) {
+  const text = String(value || "").trim();
+
+  if (!text) return null;
+
+  const number = Number(text.replace(",", "."));
+
+  if (!Number.isFinite(number) || number < 0) {
+    return null;
+  }
+
+  return Math.round(number);
 }
 
 export default function WorkerConstructionReportsPage() {
@@ -119,6 +184,8 @@ export default function WorkerConstructionReportsPage() {
 
   const [frameStatus, setFrameStatus] = useState("not_started");
   const [panelStatus, setPanelStatus] = useState("not_started");
+  const [panelQuantity, setPanelQuantity] = useState("");
+
   const [selectedCustomCategoryIds, setSelectedCustomCategoryIds] = useState([]);
   const [comment, setComment] = useState("");
 
@@ -129,7 +196,32 @@ export default function WorkerConstructionReportsPage() {
       selectedObject?.constructionStartNumber,
       selectedObject?.constructionEndNumber
     );
-  }, [selectedObject?.constructionStartNumber, selectedObject?.constructionEndNumber]);
+  }, [
+    selectedObject?.constructionStartNumber,
+    selectedObject?.constructionEndNumber,
+  ]);
+
+  const defaultPanelsPerConstruction = useMemo(() => {
+    return getDefaultPanelsPerConstruction(selectedObject);
+  }, [selectedObject]);
+
+  const calculatedPanelQuantity = useMemo(() => {
+    if (panelStatus === "not_started") return 0;
+
+    const manual = normalizePanelQuantity(panelQuantity);
+
+    if (manual !== null) return manual;
+
+    return defaultPanelsPerConstruction;
+  }, [panelStatus, panelQuantity, defaultPanelsPerConstruction]);
+
+  const panelQuantityMode = useMemo(() => {
+    if (panelStatus === "not_started") return "none";
+
+    const manual = normalizePanelQuantity(panelQuantity);
+
+    return manual !== null ? "manual" : "default";
+  }, [panelStatus, panelQuantity]);
 
   const customCategories = useMemo(() => {
     return constructionCategories.filter(
@@ -139,6 +231,7 @@ export default function WorkerConstructionReportsPage() {
 
   const availableBrigades = useMemo(() => {
     if (!selectedObjectId) return [];
+
     return brigades.filter(
       (item) => String(item.objectId || "") === String(selectedObjectId)
     );
@@ -162,6 +255,7 @@ export default function WorkerConstructionReportsPage() {
 
       try {
         const userSnap = await getDoc(doc(db, "Users", user.uid));
+
         if (!userSnap.exists()) {
           await signOut(auth);
           router.replace("/login");
@@ -196,10 +290,7 @@ export default function WorkerConstructionReportsPage() {
 
         setProfile(nextProfile);
 
-        await Promise.all([
-          loadObjectsForWorker(user.uid),
-          loadBrigades(user.uid),
-        ]);
+        await Promise.all([loadObjectsForWorker(user.uid), loadBrigades(user.uid)]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки страницы отчётов");
       } finally {
@@ -230,6 +321,12 @@ export default function WorkerConstructionReportsPage() {
     }
   }, [availableBrigades, selectedBrigadeId]);
 
+  useEffect(() => {
+    if (panelStatus === "not_started") {
+      setPanelQuantity("");
+    }
+  }, [panelStatus]);
+
   async function loadObjectsForWorker(workerUid) {
     try {
       const activeSnap = await getDocs(
@@ -255,6 +352,7 @@ export default function WorkerConstructionReportsPage() {
       }));
 
       const uniqueMap = new Map();
+
       [...activeList, ...reworkList].forEach((item) => {
         uniqueMap.set(item.id, item);
       });
@@ -280,6 +378,7 @@ export default function WorkerConstructionReportsPage() {
         collection(db, "Brigades"),
         where("memberUids", "array-contains", uid)
       );
+
       const snap = await getDocs(q);
 
       const list = snap.docs
@@ -302,6 +401,7 @@ export default function WorkerConstructionReportsPage() {
   async function loadSelectedObject(objectId) {
     try {
       const snap = await getDoc(doc(db, "Objects", objectId));
+
       if (!snap.exists()) {
         setSelectedObject(null);
         setConstructionCategories(mergeCategories([]));
@@ -309,6 +409,7 @@ export default function WorkerConstructionReportsPage() {
       }
 
       const obj = { id: snap.id, ...snap.data() };
+
       setSelectedObject(obj);
 
       const catSnap = await getDocs(
@@ -322,6 +423,7 @@ export default function WorkerConstructionReportsPage() {
 
       setConstructionCategories(mergeCategories(dbCats));
       setSelectedConstructionNumbers([]);
+      setPanelQuantity("");
     } catch (e) {
       setMsg(e?.message || "Ошибка загрузки объекта");
     }
@@ -364,6 +466,7 @@ export default function WorkerConstructionReportsPage() {
     setSelectedConstructionNumbers((prev) =>
       Array.from(new Set([...prev, ...picked])).sort((a, b) => a - b)
     );
+
     setMsg("");
   }
 
@@ -383,6 +486,7 @@ export default function WorkerConstructionReportsPage() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+
     setMsg("");
 
     if (!selectedObjectId || !selectedObject) {
@@ -409,9 +513,18 @@ export default function WorkerConstructionReportsPage() {
       return;
     }
 
+    const manualPanelQuantity = normalizePanelQuantity(panelQuantity);
+
+    if (String(panelQuantity || "").trim() && manualPanelQuantity === null) {
+      setMsg("Количество панелей должно быть числом.");
+      return;
+    }
+
     setSaving(true);
+
     try {
       const batch = writeBatch(db);
+
       const reportRef = doc(collection(db, "ConstructionReports"));
       const reportId = reportRef.id;
 
@@ -422,18 +535,17 @@ export default function WorkerConstructionReportsPage() {
 
       const reportPayload = {
         reportId,
+
         objectId: selectedObject.id,
         objectName: String(selectedObject.name || selectedObject.id),
+
         reportMode,
+
         brigadeId: reportMode === "brigade" ? selectedBrigadeId : null,
         brigadeName:
-          reportMode === "brigade"
-            ? String(selectedBrigade?.name || "")
-            : null,
+          reportMode === "brigade" ? String(selectedBrigade?.name || "") : null,
         brigadeObjectId:
-          reportMode === "brigade"
-            ? String(selectedBrigade?.objectId || "")
-            : null,
+          reportMode === "brigade" ? String(selectedBrigade?.objectId || "") : null,
         brigadeObjectName:
           reportMode === "brigade"
             ? String(selectedBrigade?.objectName || "")
@@ -442,16 +554,29 @@ export default function WorkerConstructionReportsPage() {
           reportMode === "brigade" && Array.isArray(selectedBrigade?.memberUids)
             ? selectedBrigade.memberUids
             : [],
+
         authorUid: profile.uid,
         authorName: profile.displayName,
+
         workerUid: reportMode === "personal" ? profile.uid : null,
         workerName: reportMode === "personal" ? profile.displayName : null,
+
         mirrorUids: mirrorTargets,
+
         constructionNumbers: selectedConstructionNumbers,
+
         frameStatus,
         panelStatus,
+
+        defaultPanelsPerConstruction,
+        manualPanelQuantity,
+        panelQuantityMode,
+        panelQuantityPerConstruction: calculatedPanelQuantity,
+
         customCategoryIds: selectedCustomCategoryIds,
+
         comment: String(comment || "").trim(),
+
         createdAt: serverTimestamp(),
       };
 
@@ -470,17 +595,30 @@ export default function WorkerConstructionReportsPage() {
           ref,
           {
             number: num,
+
             frameStatus,
             panelStatus,
+
+            defaultPanelsPerConstruction,
+            manualPanelQuantity,
+            panelQuantityMode,
+            panelQuantityPerConstruction: calculatedPanelQuantity,
+            panelsCount: calculatedPanelQuantity,
+            panelCount: calculatedPanelQuantity,
+
             customCategoryIds: selectedCustomCategoryIds,
+
             updatedAt: serverTimestamp(),
             updatedBy: profile.uid,
             updatedByName: profile.displayName,
+
             lastReportId: reportId,
             lastReportMode: reportMode,
             lastBrigadeId: reportMode === "brigade" ? selectedBrigadeId : null,
             lastBrigadeName:
-              reportMode === "brigade" ? String(selectedBrigade?.name || "") : null,
+              reportMode === "brigade"
+                ? String(selectedBrigade?.name || "")
+                : null,
           },
           { merge: true }
         );
@@ -500,6 +638,7 @@ export default function WorkerConstructionReportsPage() {
       setSelectedCustomCategoryIds([]);
       setFrameStatus("not_started");
       setPanelStatus("not_started");
+      setPanelQuantity("");
 
       setMsg(
         reportMode === "brigade"
@@ -546,6 +685,7 @@ export default function WorkerConstructionReportsPage() {
                   style={inputStyle}
                 >
                   <option value="">Выбери объект</option>
+
                   {objects.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name || item.id}
@@ -578,6 +718,7 @@ export default function WorkerConstructionReportsPage() {
                   style={inputStyle}
                 >
                   <option value="">Выбери бригаду</option>
+
                   {availableBrigades.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name || item.id}
@@ -590,6 +731,13 @@ export default function WorkerConstructionReportsPage() {
                     Для выбранного объекта у тебя нет привязанной бригады.
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+
+            {selectedObject ? (
+              <div style={hintStyle}>
+                Панелей по умолчанию на одну конструкцию:{" "}
+                <b>{defaultPanelsPerConstruction}</b>
               </div>
             ) : null}
 
@@ -627,17 +775,20 @@ export default function WorkerConstructionReportsPage() {
               </div>
 
               <div style={{ alignSelf: "end" }}>
-                <button
-                  type="button"
-                  className={s.secondaryBtn}
-                  onClick={addRange}
-                >
+                <button type="button" className={s.secondaryBtn} onClick={addRange}>
                   Добавить диапазон
                 </button>
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 12,
+              }}
+            >
               <button
                 type="button"
                 className={s.secondaryBtn}
@@ -701,11 +852,13 @@ export default function WorkerConstructionReportsPage() {
                   style={inputStyle}
                 >
                   <option value="not_started">Не начато</option>
+
                   <option value="built_not_wrapped">
                     {constructionCategories.find(
                       (x) => x.code === "frame_built_not_wrapped"
                     )?.name || "Конструкция собрана, не обтянута"}
                   </option>
+
                   <option value="built">
                     {constructionCategories.find((x) => x.code === "frame_built")
                       ?.name || "Конструкция собрана"}
@@ -721,11 +874,13 @@ export default function WorkerConstructionReportsPage() {
                   style={inputStyle}
                 >
                   <option value="not_started">Не начато</option>
+
                   <option value="installed_not_wrapped">
                     {constructionCategories.find(
                       (x) => x.code === "panel_installed_not_wrapped"
                     )?.name || "Панели установлены, не обтянуты"}
                   </option>
+
                   <option value="wrapped">
                     {constructionCategories.find((x) => x.code === "panel_wrapped")
                       ?.name || "Панели обтянуты"}
@@ -733,6 +888,35 @@ export default function WorkerConstructionReportsPage() {
                 </select>
               </div>
             </div>
+
+            {panelStatus !== "not_started" ? (
+              <div style={{ marginTop: 12 }}>
+                <label style={labelStyle}>
+                  Количество панелей на выбранную конструкцию
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={panelQuantity}
+                  onChange={(e) => setPanelQuantity(e.target.value)}
+                  placeholder={`Не писать = ${defaultPanelsPerConstruction} по умолчанию`}
+                  style={inputStyle}
+                />
+
+                <div style={hintStyle}>
+                  Сейчас будет записано: <b>{calculatedPanelQuantity}</b> панелей
+                  на каждую выбранную конструкцию.
+                  {panelQuantityMode === "default"
+                    ? " Используется количество по умолчанию."
+                    : ""}
+                  {panelQuantityMode === "manual"
+                    ? " Используется число, которое ты написал."
+                    : ""}
+                </div>
+              </div>
+            ) : null}
 
             {customCategories.length > 0 ? (
               <div style={{ marginTop: 12 }}>
@@ -746,6 +930,7 @@ export default function WorkerConstructionReportsPage() {
                         checked={selectedCustomCategoryIds.includes(item.id)}
                         onChange={() => toggleCustomCategory(item.id)}
                       />
+
                       <span
                         style={{
                           width: 14,
@@ -755,6 +940,7 @@ export default function WorkerConstructionReportsPage() {
                           display: "inline-block",
                         }}
                       />
+
                       <span>{item.name}</span>
                     </label>
                   ))}
@@ -764,6 +950,7 @@ export default function WorkerConstructionReportsPage() {
 
             <div style={{ marginTop: 12 }}>
               <label style={labelStyle}>Комментарий</label>
+
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -774,11 +961,7 @@ export default function WorkerConstructionReportsPage() {
           </div>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <button
-              type="submit"
-              className={s.primaryBtn}
-              disabled={saving}
-            >
+            <button type="submit" className={s.primaryBtn} disabled={saving}>
               {saving ? "Сохранение..." : "Сохранить отчёт"}
             </button>
           </div>
@@ -875,4 +1058,14 @@ const customItemStyle = {
   background: "#fff",
   border: "1px solid rgba(15,23,42,0.08)",
   fontSize: 13,
+};
+
+const hintStyle = {
+  marginTop: 8,
+  padding: 10,
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.7)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  fontSize: 14,
+  opacity: 0.9,
 };
