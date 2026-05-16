@@ -425,9 +425,7 @@ export default function ManagerWorkdaysPage() {
         status: editForm.status || "ended",
 
         objectId: objectItem?.id || editForm.objectId || "",
-        objectName: objectItem
-          ? String(objectItem.name || objectItem.id)
-          : "",
+        objectName: objectItem ? String(objectItem.name || objectItem.id) : "",
 
         objectGeo: objectItem ? getObjectGeo(objectItem) : null,
 
@@ -465,18 +463,23 @@ export default function ManagerWorkdaysPage() {
   if (loading) {
     return (
       <main className={styles.page}>
-        <div className={styles.card}>Загрузка...</div>
+        <div className={styles.card} style={{ color: "#111827" }}>
+          Загрузка...
+        </div>
       </main>
     );
   }
 
   return (
     <main className={styles.page}>
-      <div className={styles.card}>
+      <div className={styles.card} style={{ color: "#111827" }}>
         <div className={styles.header}>
           <div>
-            <div className={styles.title}>Рабочее время работников</div>
-            <div className={styles.subtitle}>
+            <div className={styles.title} style={{ color: "#111827" }}>
+              Рабочее время работников
+            </div>
+
+            <div className={styles.subtitle} style={{ color: "#374151" }}>
               Просмотр и редактирование рабочих дней
             </div>
           </div>
@@ -486,6 +489,7 @@ export default function ManagerWorkdaysPage() {
           <div style={grid2Style}>
             <div>
               <div style={labelStyle}>Работник</div>
+
               <select
                 value={selectedUid}
                 onChange={(e) => handleUserChange(e.target.value)}
@@ -501,6 +505,7 @@ export default function ManagerWorkdaysPage() {
 
             <div>
               <div style={labelStyle}>Месяц</div>
+
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
@@ -519,7 +524,7 @@ export default function ManagerWorkdaysPage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 14, color: "#111827" }}>
             <b>Выбран:</b> {selectedUser ? userDisplayName(selectedUser) : "-"}
           </div>
         </div>
@@ -586,6 +591,7 @@ export default function ManagerWorkdaysPage() {
                       <div style={grid2Style}>
                         <div>
                           <div style={labelStyle}>Объект</div>
+
                           <select
                             value={editForm?.objectId || ""}
                             onChange={(e) =>
@@ -594,6 +600,7 @@ export default function ManagerWorkdaysPage() {
                             style={inputStyle}
                           >
                             <option value="">Без объекта</option>
+
                             {objects.map((o) => (
                               <option key={o.id} value={o.id}>
                                 {o.name || o.id}
@@ -604,6 +611,7 @@ export default function ManagerWorkdaysPage() {
 
                         <div>
                           <div style={labelStyle}>Статус</div>
+
                           <select
                             value={editForm?.status || "ended"}
                             onChange={(e) =>
@@ -621,6 +629,7 @@ export default function ManagerWorkdaysPage() {
                       <div style={grid4Style}>
                         <div>
                           <div style={labelStyle}>Начало</div>
+
                           <input
                             type="time"
                             value={editForm?.startTime || ""}
@@ -633,6 +642,7 @@ export default function ManagerWorkdaysPage() {
 
                         <div>
                           <div style={labelStyle}>Начало перерыва</div>
+
                           <input
                             type="time"
                             value={editForm?.breakStartTime || ""}
@@ -645,6 +655,7 @@ export default function ManagerWorkdaysPage() {
 
                         <div>
                           <div style={labelStyle}>Конец перерыва</div>
+
                           <input
                             type="time"
                             value={editForm?.breakEndTime || ""}
@@ -657,6 +668,7 @@ export default function ManagerWorkdaysPage() {
 
                         <div>
                           <div style={labelStyle}>Конец дня</div>
+
                           <input
                             type="time"
                             value={editForm?.endTime || ""}
@@ -695,7 +707,7 @@ export default function ManagerWorkdaysPage() {
           )}
         </div>
 
-        <h2 style={{ marginTop: 22 }}>
+        <h2 style={totalStyle}>
           Итого за месяц: {formatMinutes(totalMonthMinutes)}
         </h2>
 
@@ -712,8 +724,9 @@ export default function ManagerWorkdaysPage() {
 const boxStyle = {
   padding: 16,
   borderRadius: 18,
-  background: "rgba(255,255,255,0.82)",
+  background: "rgba(255,255,255,0.86)",
   border: "1px solid rgba(15,23,42,0.08)",
+  color: "#111827",
 };
 
 const grid2Style = {
@@ -732,6 +745,7 @@ const grid4Style = {
 const labelStyle = {
   fontWeight: 700,
   marginBottom: 6,
+  color: "#111827",
 };
 
 const inputStyle = {
@@ -747,15 +761,17 @@ const inputStyle = {
 const emptyStyle = {
   padding: 16,
   borderRadius: 16,
-  background: "rgba(255,255,255,0.82)",
+  background: "rgba(255,255,255,0.86)",
   border: "1px solid rgba(15,23,42,0.08)",
+  color: "#111827",
 };
 
 const dayStyle = {
   padding: 14,
   borderRadius: 16,
-  background: "rgba(255,255,255,0.75)",
+  background: "rgba(255,255,255,0.86)",
   border: "1px solid rgba(15,23,42,0.08)",
+  color: "#111827",
 };
 
 const topRowStyle = {
@@ -763,14 +779,16 @@ const topRowStyle = {
   justifyContent: "space-between",
   gap: 12,
   marginBottom: 8,
+  color: "#111827",
 };
 
 const editBoxStyle = {
   marginTop: 12,
   padding: 14,
   borderRadius: 16,
-  background: "rgba(255,255,255,0.82)",
+  background: "rgba(255,255,255,0.9)",
   border: "1px solid rgba(120,90,20,0.14)",
+  color: "#111827",
 };
 
 const buttonsStyle = {
@@ -811,4 +829,10 @@ const editedStyle = {
   marginTop: 8,
   opacity: 0.75,
   fontSize: 14,
+  color: "#111827",
+};
+
+const totalStyle = {
+  marginTop: 22,
+  color: "#111827",
 };
