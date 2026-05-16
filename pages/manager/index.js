@@ -240,34 +240,42 @@ export default function ManagerIndexPage() {
         </div>
 
         <div style={menuGridStyle}>
-          <Link href="/admin/users" className={styles.actionButton} style={menuBtnStyle}>
-            Пользователи
-          </Link>
+  <Link href="/admin/users" className={styles.actionButton} style={menuBtnStyle}>
+    Пользователи
+  </Link>
 
-          <Link href="/manager/objects" className={styles.actionButton} style={menuBtnStyle}>
-            Объекты
-          </Link>
+  <Link href="/manager/objects" className={styles.actionButton} style={menuBtnStyle}>
+    Объекты
+  </Link>
 
-          <Link href="/manager/brigades" className={styles.actionButton} style={menuBtnStyle}>
-            Бригады
-          </Link>
+  <Link href="/manager/brigades" className={styles.actionButton} style={menuBtnStyle}>
+    Бригады
+  </Link>
 
-          <Link
-            href="/manager/construction-reports"
-            className={styles.actionButton}
-            style={menuBtnStyle}
-          >
-            Отчёты по конструкциям
-          </Link>
+  <Link
+    href="/manager/construction-reports"
+    className={styles.actionButton}
+    style={menuBtnStyle}
+  >
+    Отчёты по конструкциям
+  </Link>
 
-          <Link href="/manager/documents" className={styles.actionButton} style={menuBtnStyle}>
-            Документы работников
-          </Link>
+  <Link href="/manager/documents" className={styles.actionButton} style={menuBtnStyle}>
+    Документы работников
+  </Link>
 
-          <Link href="/manager/workdays" className={styles.actionButton} style={menuBtnStyle}>
-            Рабочее время работников
-          </Link>
-        </div>
+  <Link href="/manager/workdays" className={styles.actionButton} style={menuBtnStyle}>
+    Рабочее время работников
+  </Link>
+
+  <Link
+    href="/manager/object-calculator"
+    className={styles.actionButton}
+    style={menuBtnStyle}
+  >
+    Калькулятор объекта
+  </Link>
+</div>
 
         <div style={menuGridStyle}>
           <button
