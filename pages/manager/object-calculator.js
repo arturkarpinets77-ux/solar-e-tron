@@ -1,6 +1,22 @@
 import Head from "next/head";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
+
+import { auth, db } from "../../lib/firebaseClient";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -29,69 +45,109 @@ function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const defaultWorkRows = [
-  {
-    id: makeId(),
-    name: "Монтаж панелей",
-    qty: "",
-    unit: "шт.",
-    price: "",
-  },
-  {
-    id: makeId(),
-    name: "Монтаж конструкций",
-    qty: "",
-    unit: "шт.",
-    price: "",
-  },
-  {
-    id: makeId(),
-    name: "Подготовительные работы",
-    qty: "",
-    unit: "ч.",
-    price: "",
-  },
-  {
-    id: makeId(),
-    name: "Дополнительные работы",
-    qty: "",
-    unit: "ч.",
-    price: "",
-  },
-];
+function createDefaultWorkRows() {
+  return [
+    {
+      id: makeId(),
+      name: "Монтаж панелей",
+      qty: "",
+      unit: "шт",
+      price: "",
+    },
+    {
+      id: makeId(),
+      name: "Монтаж конструкций",
+      qty: "",
+      unit: "шт",
+      price: "",
+    },
+    {
+      id: makeId(),
+      name: "Подготовительные работы",
+      qty: "",
+      unit: "ч",
+      price: "",
+    },
+    {
+      id: makeId(),
+      name: "Дополнительные работы",
+      qty: "",
+      unit: "ч",
+      price: "",
+    },
+  ];
+}
 
-const defaultExpenseRows = [
-  {
-    id: makeId(),
-    name: "Транспорт",
-    qty: "",
-    unit: "км / раз",
-    price: "",
-  },
-  {
-    id: makeId(),
-    name: "Аренда техники",
-    qty: "",
-    unit: "день / ч.",
-    price: "",
-  },
-  {
-    id: makeId(),
-    name: "Материалы",
-    qty: "",
-    unit: "шт.",
-    price: "",
-  },
-  {
-    id: makeId(),
-    name: "Прочие расходы",
-    qty: "",
-    unit: "шт.",
-    price: "",
-  },
-];
+function createDefaultExpenseRows() {
+  return [
+    {
+      id: makeId(),
+      name: "Транспорт",
+      qty: "",
+      unit: "км / раз",
+      price: "",
+    },
+    {
+      id: makeId(),
+      name: "Аренда техники",
+      qty: "",
+      unit: "день / ч",
+      price: "",
+    },
+    {
+      id: makeId(),
+      name: "Материалы",
+      qty: "",
+      unit: "шт",
+      price: "",
+    },
+    {
+      id: makeId(),
+      name: "Прочие расходы",
+      qty: "",
+      unit: "шт",
+      price: "",
+    },
+  ];
+}
+
+function cleanRows(rows) {
+  return rows.map((row) => ({
+    id: row.id || makeId(),
+    name: String(row.name || ""),
+    qty: String(row.qty || ""),
+    unit: String(row.unit || ""),
+    price: String(row.price || ""),
+  }));
+}
+
+function formatSavedDate(value) {
+  try {
+    if (!value) return "-";
+
+    if (typeof value.toDate === "function") {
+      return value.toDate().toLocaleString("fi-FI");
+    }
+
+    return String(value);
+  } catch {
+    return "-";
+  }
+}
 
 export default function ObjectCalculatorPage() {
+  const router = useRouter();
+
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
+
+  const [msg, setMsg] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+
+  const [openedCalculationId, setOpenedCalculationId] = useState("");
+  const [savedCalculations, setSavedCalculations] = useState([]);
+
   const [info, setInfo] = useState({
     calculationNumber: "",
     objectName: "",
@@ -101,11 +157,66 @@ export default function ObjectCalculatorPage() {
     comment: "",
   });
 
-  const [workRows, setWorkRows] = useState(defaultWorkRows);
-  const [expenseRows, setExpenseRows] = useState(defaultExpenseRows);
+  const [workRows, setWorkRows] = useState(createDefaultWorkRows);
+  const [expenseRows, setExpenseRows] = useState(createDefaultExpenseRows);
 
   const [discount, setDiscount] = useState("");
   const [alvPercent, setAlvPercent] = useState("25,5");
+
+  useEffect(() => {
+    if (!auth || !db) return;
+
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setAuthLoading(true);
+      setMsg("");
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      try {
+        const userRef = doc(db, "Users", user.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
+          router.replace("/login");
+          return;
+        }
+
+        const data = userSnap.data() || {};
+        const role = String(data.role || "").toLowerCase();
+        const status = String(data.status || "").toLowerCase();
+
+        if (status !== "active") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        if (role !== "director" && role !== "admin") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        setProfile({
+          uid: user.uid,
+          role,
+          status,
+          email: String(data.email || user.email || ""),
+          firstName: String(data.firstName || ""),
+          lastName: String(data.lastName || ""),
+        });
+
+        await loadSavedCalculations();
+      } catch (e) {
+        setMsg(e?.message || "Ошибка проверки доступа");
+      } finally {
+        setAuthLoading(false);
+      }
+    });
+
+    return () => unsub();
+  }, [router]);
 
   function updateInfo(field, value) {
     setInfo((prev) => ({
@@ -178,13 +289,170 @@ export default function ObjectCalculatorPage() {
     };
   }, [workRows, expenseRows, discount, alvPercent]);
 
+  function buildPayload() {
+    return {
+      calculationNumber: String(info.calculationNumber || "").trim(),
+      objectName: String(info.objectName || "").trim(),
+      objectAddress: String(info.objectAddress || "").trim(),
+      customerName: String(info.customerName || "").trim(),
+      calculationDate: String(info.calculationDate || ""),
+      comment: String(info.comment || ""),
+
+      workRows: cleanRows(workRows),
+      expenseRows: cleanRows(expenseRows),
+
+      discount: String(discount || ""),
+      alvPercent: String(alvPercent || ""),
+
+      totals: {
+        worksTotal: totals.worksTotal,
+        expensesTotal: totals.expensesTotal,
+        discountValue: totals.discountValue,
+        subtotalBeforeAlv: totals.subtotalBeforeAlv,
+        alvAmount: totals.alvAmount,
+        finalTotal: totals.finalTotal,
+      },
+
+      updatedBy: profile?.uid || "",
+      updatedAt: serverTimestamp(),
+    };
+  }
+
+  async function loadSavedCalculations() {
+    if (!db) return;
+
+    setLoadingSaved(true);
+
+    try {
+      const ref = collection(db, "ObjectCalculations");
+      const q = query(ref, orderBy("updatedAt", "desc"));
+      const snap = await getDocs(q);
+
+      const list = snap.docs.map((item) => ({
+        id: item.id,
+        ...item.data(),
+      }));
+
+      setSavedCalculations(list);
+    } catch (e) {
+      setMsg(e?.message || "Ошибка загрузки сохранённых расчётов");
+    } finally {
+      setLoadingSaved(false);
+    }
+  }
+
+  async function saveAsNewCalculation() {
+    if (!profile?.uid) return;
+
+    setSaving(true);
+    setMsg("");
+
+    try {
+      const payload = {
+        ...buildPayload(),
+        createdBy: profile.uid,
+        createdAt: serverTimestamp(),
+      };
+
+      const ref = await addDoc(collection(db, "ObjectCalculations"), payload);
+
+      setOpenedCalculationId(ref.id);
+      await loadSavedCalculations();
+
+      setMsg("Расчёт сохранён как новый.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка сохранения расчёта");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateOpenedCalculation() {
+    if (!openedCalculationId) {
+      setMsg("Сначала открой сохранённый расчёт или сохрани как новый.");
+      return;
+    }
+
+    setSaving(true);
+    setMsg("");
+
+    try {
+      const ref = doc(db, "ObjectCalculations", openedCalculationId);
+      await updateDoc(ref, buildPayload());
+
+      await loadSavedCalculations();
+
+      setMsg("Открытый расчёт обновлён.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка обновления расчёта");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openSavedCalculation(item) {
+    setOpenedCalculationId(item.id);
+
+    setInfo({
+      calculationNumber: String(item.calculationNumber || ""),
+      objectName: String(item.objectName || ""),
+      objectAddress: String(item.objectAddress || ""),
+      customerName: String(item.customerName || ""),
+      calculationDate: String(item.calculationDate || todayDate()),
+      comment: String(item.comment || ""),
+    });
+
+    setWorkRows(
+      Array.isArray(item.workRows) && item.workRows.length > 0
+        ? cleanRows(item.workRows)
+        : createDefaultWorkRows()
+    );
+
+    setExpenseRows(
+      Array.isArray(item.expenseRows) && item.expenseRows.length > 0
+        ? cleanRows(item.expenseRows)
+        : createDefaultExpenseRows()
+    );
+
+    setDiscount(String(item.discount || ""));
+    setAlvPercent(String(item.alvPercent || "25,5"));
+
+    setMsg("Расчёт открыт для редактирования.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function deleteSavedCalculation(id) {
+    const ok = window.confirm("Удалить этот расчёт?");
+    if (!ok) return;
+
+    setSaving(true);
+    setMsg("");
+
+    try {
+      await deleteDoc(doc(db, "ObjectCalculations", id));
+
+      if (openedCalculationId === id) {
+        setOpenedCalculationId("");
+      }
+
+      await loadSavedCalculations();
+      setMsg("Расчёт удалён.");
+    } catch (e) {
+      setMsg(e?.message || "Ошибка удаления расчёта");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function printReport() {
     window.print();
   }
 
   function clearCalculator() {
-    const confirmClear = window.confirm("Очистить весь расчёт?");
+    const confirmClear = window.confirm("Очистить форму расчёта?");
     if (!confirmClear) return;
+
+    setOpenedCalculationId("");
 
     setInfo({
       calculationNumber: "",
@@ -195,10 +463,41 @@ export default function ObjectCalculatorPage() {
       comment: "",
     });
 
-    setWorkRows(defaultWorkRows.map((row) => ({ ...row, id: makeId(), qty: "", price: "" })));
-    setExpenseRows(defaultExpenseRows.map((row) => ({ ...row, id: makeId(), qty: "", price: "" })));
+    setWorkRows(createDefaultWorkRows());
+    setExpenseRows(createDefaultExpenseRows());
     setDiscount("");
     setAlvPercent("25,5");
+    setMsg("Форма очищена.");
+  }
+
+  if (authLoading) {
+    return (
+      <main className="page">
+        <section className="calculatorCard">
+          <h1>Калькулятор объекта</h1>
+          <p>Загрузка...</p>
+        </section>
+
+        <style jsx>{`
+          .page {
+            min-height: 100vh;
+            padding: 32px;
+            background: linear-gradient(180deg, rgba(235, 248, 255, 0.95), rgba(255, 250, 235, 0.95));
+            color: #263238;
+            font-family: Arial, sans-serif;
+          }
+
+          .calculatorCard {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 28px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+          }
+        `}</style>
+      </main>
+    );
   }
 
   return (
@@ -213,6 +512,12 @@ export default function ObjectCalculatorPage() {
             <div>
               <h1>Калькулятор объекта</h1>
               <p>Помощник для расчёта стоимости объекта и подготовки PDF-отчёта.</p>
+
+              {openedCalculationId ? (
+                <p className="openedText">Открыт сохранённый расчёт. Можно обновить его или сохранить как новый.</p>
+              ) : (
+                <p className="openedText">Новый расчёт. После заполнения можно сохранить в базе.</p>
+              )}
             </div>
 
             <div className="topActions">
@@ -234,6 +539,41 @@ export default function ObjectCalculatorPage() {
             <h2>Solar E-Tron</h2>
             <p>Расчёт стоимости объекта</p>
           </div>
+
+          {msg ? <div className="msg noPrint">{msg}</div> : null}
+
+          <section className="block noPrint">
+            <h2>Сохранение расчёта</h2>
+
+            <div className="saveActions">
+              <button
+                type="button"
+                className="primaryButton"
+                onClick={saveAsNewCalculation}
+                disabled={saving}
+              >
+                Сохранить как новый
+              </button>
+
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={updateOpenedCalculation}
+                disabled={saving || !openedCalculationId}
+              >
+                Обновить открытый расчёт
+              </button>
+
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={loadSavedCalculations}
+                disabled={loadingSaved}
+              >
+                Обновить список
+              </button>
+            </div>
+          </section>
 
           <section className="block">
             <h2>Информация по расчёту</h2>
@@ -332,7 +672,7 @@ export default function ObjectCalculatorPage() {
                         <input
                           value={row.unit}
                           onChange={(e) => updateRow("work", row.id, "unit", e.target.value)}
-                          placeholder="шт."
+                          placeholder="шт"
                         />
                       </td>
 
@@ -413,7 +753,7 @@ export default function ObjectCalculatorPage() {
                         <input
                           value={row.unit}
                           onChange={(e) => updateRow("expense", row.id, "unit", e.target.value)}
-                          placeholder="шт."
+                          placeholder="шт"
                         />
                       </td>
 
@@ -505,10 +845,93 @@ export default function ObjectCalculatorPage() {
             />
           </section>
 
+          <section className="block noPrint">
+            <div className="sectionTitle">
+              <h2>Сохранённые расчёты</h2>
+
+              <button
+                type="button"
+                className="smallButton"
+                onClick={loadSavedCalculations}
+                disabled={loadingSaved}
+              >
+                Обновить
+              </button>
+            </div>
+
+            {loadingSaved ? <p>Загрузка сохранённых расчётов...</p> : null}
+
+            {!loadingSaved && savedCalculations.length === 0 ? (
+              <p>Сохранённых расчётов пока нет.</p>
+            ) : null}
+
+            <div className="savedList">
+              {savedCalculations.map((item) => (
+                <div
+                  key={item.id}
+                  className={
+                    openedCalculationId === item.id
+                      ? "savedItem savedItemActive"
+                      : "savedItem"
+                  }
+                >
+                  <div className="savedMain">
+                    <strong>
+                      {item.calculationNumber
+                        ? `№ ${item.calculationNumber}`
+                        : "Без номера"}
+                    </strong>
+
+                    <span>{item.objectName || "Без названия объекта"}</span>
+                    <span>{item.customerName || "Заказчик не указан"}</span>
+                    <span>Обновлено: {formatSavedDate(item.updatedAt)}</span>
+                    <span>Итого: {money(item?.totals?.finalTotal || 0)}</span>
+                  </div>
+
+                  <div className="savedActions">
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() => openSavedCalculation(item)}
+                    >
+                      Открыть
+                    </button>
+
+                    <button
+                      type="button"
+                      className="deleteSavedButton"
+                      onClick={() => deleteSavedCalculation(item.id)}
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <div className="bottomActions noPrint">
             <Link href="/manager" className="secondaryButton">
               Назад в кабинет
             </Link>
+
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={saveAsNewCalculation}
+              disabled={saving}
+            >
+              Сохранить как новый
+            </button>
+
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={updateOpenedCalculation}
+              disabled={saving || !openedCalculationId}
+            >
+              Обновить открытый
+            </button>
 
             <button type="button" className="primaryButton" onClick={printReport}>
               Печать / сохранить PDF
@@ -559,8 +982,23 @@ export default function ObjectCalculatorPage() {
           color: #607d8b;
         }
 
+        .openedText {
+          font-size: 14px;
+          color: #607d8b;
+        }
+
+        .msg {
+          margin: 14px 0;
+          padding: 12px 14px;
+          border-radius: 14px;
+          background: #fff8e1;
+          color: #5d4037;
+          font-weight: 700;
+        }
+
         .topActions,
-        .bottomActions {
+        .bottomActions,
+        .saveActions {
           display: flex;
           gap: 12px;
           flex-wrap: wrap;
@@ -569,7 +1007,8 @@ export default function ObjectCalculatorPage() {
 
         .primaryButton,
         .secondaryButton,
-        .smallButton {
+        .smallButton,
+        .deleteSavedButton {
           border: none;
           border-radius: 14px;
           padding: 12px 18px;
@@ -596,6 +1035,19 @@ export default function ObjectCalculatorPage() {
           background: #e3f2fd;
           color: #0d47a1;
           padding: 10px 14px;
+        }
+
+        .deleteSavedButton {
+          background: #ffebee;
+          color: #b71c1c;
+        }
+
+        .primaryButton:disabled,
+        .secondaryButton:disabled,
+        .smallButton:disabled,
+        .deleteSavedButton:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
 
         .block {
@@ -713,6 +1165,44 @@ export default function ObjectCalculatorPage() {
           color: #0d47a1;
         }
 
+        .savedList {
+          display: grid;
+          gap: 12px;
+        }
+
+        .savedItem {
+          display: flex;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 14px;
+          border-radius: 16px;
+          border: 1px solid #e0e0e0;
+          background: white;
+        }
+
+        .savedItemActive {
+          border-color: #1976d2;
+          background: #e3f2fd;
+        }
+
+        .savedMain {
+          display: grid;
+          gap: 4px;
+        }
+
+        .savedMain span {
+          color: #546e7a;
+          font-size: 14px;
+        }
+
+        .savedActions {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
         .printHeader {
           display: none;
         }
@@ -735,17 +1225,23 @@ export default function ObjectCalculatorPage() {
           }
 
           .topActions,
-          .bottomActions {
+          .bottomActions,
+          .saveActions {
             justify-content: stretch;
           }
 
           .primaryButton,
-          .secondaryButton {
+          .secondaryButton,
+          .deleteSavedButton {
             width: 100%;
           }
 
           .infoGrid {
             grid-template-columns: 1fr;
+          }
+
+          .savedItem {
+            flex-direction: column;
           }
 
           h1 {
