@@ -161,6 +161,7 @@ export default function ObjectCalculatorPage() {
   const [expenseRows, setExpenseRows] = useState(createDefaultExpenseRows);
 
   const [discount, setDiscount] = useState("");
+  const [discountType, setDiscountType] = useState("amount");
   const [alvPercent, setAlvPercent] = useState("25,5");
 
   useEffect(() => {
@@ -272,22 +273,34 @@ export default function ObjectCalculatorPage() {
     const worksTotal = workRows.reduce((sum, row) => sum + rowSum(row), 0);
     const expensesTotal = expenseRows.reduce((sum, row) => sum + rowSum(row), 0);
 
-    const discountValue = toNumber(discount);
+    const baseTotal = worksTotal + expensesTotal;
+    const discountInput = toNumber(discount);
     const alvValue = toNumber(alvPercent);
 
-    const subtotalBeforeAlv = Math.max(0, worksTotal + expensesTotal - discountValue);
+    let discountValue = 0;
+
+    if (discountType === "percent") {
+      discountValue = baseTotal * (discountInput / 100);
+    } else {
+      discountValue = discountInput;
+    }
+
+    const subtotalBeforeAlv = Math.max(0, baseTotal - discountValue);
     const alvAmount = subtotalBeforeAlv * (alvValue / 100);
     const finalTotal = subtotalBeforeAlv + alvAmount;
 
     return {
       worksTotal,
       expensesTotal,
+      baseTotal,
+      discountInput,
+      discountType,
       discountValue,
       subtotalBeforeAlv,
       alvAmount,
       finalTotal,
     };
-  }, [workRows, expenseRows, discount, alvPercent]);
+  }, [workRows, expenseRows, discount, discountType, alvPercent]);
 
   function buildPayload() {
     return {
@@ -302,11 +315,15 @@ export default function ObjectCalculatorPage() {
       expenseRows: cleanRows(expenseRows),
 
       discount: String(discount || ""),
+      discountType: String(discountType || "amount"),
       alvPercent: String(alvPercent || ""),
 
       totals: {
         worksTotal: totals.worksTotal,
         expensesTotal: totals.expensesTotal,
+        baseTotal: totals.baseTotal,
+        discountInput: totals.discountInput,
+        discountType: totals.discountType,
         discountValue: totals.discountValue,
         subtotalBeforeAlv: totals.subtotalBeforeAlv,
         alvAmount: totals.alvAmount,
@@ -415,6 +432,7 @@ export default function ObjectCalculatorPage() {
     );
 
     setDiscount(String(item.discount || ""));
+    setDiscountType(String(item.discountType || item?.totals?.discountType || "amount"));
     setAlvPercent(String(item.alvPercent || "25,5"));
 
     setMsg("Расчёт открыт для редактирования.");
@@ -466,6 +484,7 @@ export default function ObjectCalculatorPage() {
     setWorkRows(createDefaultWorkRows());
     setExpenseRows(createDefaultExpenseRows());
     setDiscount("");
+    setDiscountType("amount");
     setAlvPercent("25,5");
     setMsg("Форма очищена.");
   }
@@ -798,14 +817,35 @@ export default function ObjectCalculatorPage() {
                 <strong>{money(totals.expensesTotal)}</strong>
               </div>
 
+              <div className="summaryRow">
+                <span>Сумма до скидки:</span>
+                <strong>{money(totals.baseTotal)}</strong>
+              </div>
+
               <div className="summaryRow editableRow">
                 <span>Скидка:</span>
-                <input
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  placeholder="0"
-                  inputMode="decimal"
-                />
+
+                <div className="discountControl">
+                  <input
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    placeholder="0"
+                    inputMode="decimal"
+                  />
+
+                  <select
+                    value={discountType}
+                    onChange={(e) => setDiscountType(e.target.value)}
+                  >
+                    <option value="amount">€</option>
+                    <option value="percent">%</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="summaryRow">
+                <span>Сумма скидки:</span>
+                <strong>{money(totals.discountValue)}</strong>
               </div>
 
               <div className="summaryRow">
@@ -1072,7 +1112,8 @@ export default function ObjectCalculatorPage() {
         }
 
         input,
-        textarea {
+        textarea,
+        select {
           width: 100%;
           box-sizing: border-box;
           border: 1px solid #cfd8dc;
@@ -1139,7 +1180,7 @@ export default function ObjectCalculatorPage() {
         }
 
         .summaryGrid {
-          max-width: 540px;
+          max-width: 560px;
           margin-left: auto;
           display: grid;
           gap: 10px;
@@ -1157,6 +1198,22 @@ export default function ObjectCalculatorPage() {
         .editableRow input {
           max-width: 160px;
           text-align: right;
+        }
+
+        .discountControl {
+          display: grid;
+          grid-template-columns: 1fr 76px;
+          gap: 8px;
+          max-width: 240px;
+        }
+
+        .discountControl input {
+          max-width: none;
+        }
+
+        .discountControl select {
+          text-align: center;
+          font-weight: 700;
         }
 
         .finalRow {
@@ -1240,6 +1297,20 @@ export default function ObjectCalculatorPage() {
             grid-template-columns: 1fr;
           }
 
+          .summaryRow {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .editableRow input {
+            max-width: none;
+          }
+
+          .discountControl {
+            width: 100%;
+            max-width: none;
+          }
+
           .savedItem {
             flex-direction: column;
           }
@@ -1284,7 +1355,8 @@ export default function ObjectCalculatorPage() {
           }
 
           input,
-          textarea {
+          textarea,
+          select {
             border: none;
             padding: 0;
             border-radius: 0;
