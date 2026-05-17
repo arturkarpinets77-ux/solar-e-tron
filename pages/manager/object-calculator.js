@@ -34,6 +34,16 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function formatInputNumber(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) return "";
+
+  const rounded = Math.round((number + Number.EPSILON) * 100) / 100;
+
+  return String(rounded).replace(".", ",");
+}
+
 function money(value) {
   return new Intl.NumberFormat("fi-FI", {
     style: "currency",
@@ -301,6 +311,34 @@ export default function ObjectCalculatorPage() {
       finalTotal,
     };
   }, [workRows, expenseRows, discount, discountType, alvPercent]);
+
+  function handleDiscountTypeChange(nextType) {
+    if (nextType === discountType) return;
+
+    const baseTotal = totals.baseTotal;
+    const currentDiscount = toNumber(discount);
+
+    if (!baseTotal || baseTotal <= 0) {
+      setDiscountType(nextType);
+      return;
+    }
+
+    if (discountType === "amount" && nextType === "percent") {
+      const percentValue = (currentDiscount / baseTotal) * 100;
+      setDiscount(formatInputNumber(percentValue));
+      setDiscountType("percent");
+      return;
+    }
+
+    if (discountType === "percent" && nextType === "amount") {
+      const amountValue = baseTotal * (currentDiscount / 100);
+      setDiscount(formatInputNumber(amountValue));
+      setDiscountType("amount");
+      return;
+    }
+
+    setDiscountType(nextType);
+  }
 
   function buildPayload() {
     return {
@@ -835,7 +873,7 @@ export default function ObjectCalculatorPage() {
 
                   <select
                     value={discountType}
-                    onChange={(e) => setDiscountType(e.target.value)}
+                    onChange={(e) => handleDiscountTypeChange(e.target.value)}
                   >
                     <option value="amount">€</option>
                     <option value="percent">%</option>
