@@ -131,6 +131,15 @@ function cleanRows(rows) {
   }));
 }
 
+function rowHasContent(row) {
+  return (
+    String(row.name || "").trim() ||
+    String(row.qty || "").trim() ||
+    String(row.unit || "").trim() ||
+    String(row.price || "").trim()
+  );
+}
+
 function formatSavedDate(value) {
   try {
     if (!value) return "-";
@@ -143,6 +152,11 @@ function formatSavedDate(value) {
   } catch {
     return "-";
   }
+}
+
+function displayText(value, fallback = "-") {
+  const text = String(value || "").trim();
+  return text || fallback;
 }
 
 export default function ObjectCalculatorPage() {
@@ -311,6 +325,14 @@ export default function ObjectCalculatorPage() {
       finalTotal,
     };
   }, [workRows, expenseRows, discount, discountType, alvPercent]);
+
+  const printableWorkRows = useMemo(() => {
+    return workRows.filter(rowHasContent);
+  }, [workRows]);
+
+  const printableExpenseRows = useMemo(() => {
+    return expenseRows.filter(rowHasContent);
+  }, [expenseRows]);
 
   function handleDiscountTypeChange(nextType) {
     if (nextType === discountType) return;
@@ -527,6 +549,14 @@ export default function ObjectCalculatorPage() {
     setMsg("Форма очищена.");
   }
 
+  function discountLabel() {
+    if (discountType === "percent") {
+      return `${displayText(discount, "0")} %`;
+    }
+
+    return `${displayText(discount, "0")} €`;
+  }
+
   if (authLoading) {
     return (
       <main className="page">
@@ -564,7 +594,7 @@ export default function ObjectCalculatorPage() {
       </Head>
 
       <main className="page">
-        <section className="calculatorCard">
+        <section className="calculatorCard screenDocument">
           <div className="topBar noPrint">
             <div>
               <h1>Калькулятор объекта</h1>
@@ -590,11 +620,6 @@ export default function ObjectCalculatorPage() {
                 Печать / PDF
               </button>
             </div>
-          </div>
-
-          <div className="printHeader">
-            <h2>Solar E-Tron</h2>
-            <p>Расчёт стоимости объекта</p>
           </div>
 
           {msg ? <div className="msg noPrint">{msg}</div> : null}
@@ -1016,6 +1041,172 @@ export default function ObjectCalculatorPage() {
             </button>
           </div>
         </section>
+
+        <section className="printDocument">
+          <div className="printTop">
+            <div>
+              <div className="printCompany">Solar E-Tron</div>
+              <div className="printSubtitle">Расчёт стоимости объекта</div>
+            </div>
+
+            <div className="printMetaBox">
+              <div>
+                <span>Номер:</span>
+                <strong>{displayText(info.calculationNumber)}</strong>
+              </div>
+              <div>
+                <span>Дата:</span>
+                <strong>{displayText(info.calculationDate)}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="printInfoGrid">
+            <div className="printInfoItem">
+              <span>Заказчик</span>
+              <strong>{displayText(info.customerName)}</strong>
+            </div>
+
+            <div className="printInfoItem">
+              <span>Объект</span>
+              <strong>{displayText(info.objectName)}</strong>
+            </div>
+
+            <div className="printInfoItem printWide">
+              <span>Адрес объекта</span>
+              <strong>{displayText(info.objectAddress)}</strong>
+            </div>
+          </div>
+
+          <div className="printSection">
+            <h2>Работы</h2>
+
+            <table className="printTable">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Название</th>
+                  <th>Кол-во</th>
+                  <th>Ед.</th>
+                  <th>Цена</th>
+                  <th>Сумма</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {printableWorkRows.length > 0 ? (
+                  printableWorkRows.map((row, index) => (
+                    <tr key={row.id || index}>
+                      <td>{index + 1}</td>
+                      <td>{displayText(row.name)}</td>
+                      <td>{displayText(row.qty)}</td>
+                      <td>{displayText(row.unit)}</td>
+                      <td>{money(toNumber(row.price))}</td>
+                      <td>{money(rowSum(row))}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6">Работы не указаны</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="printSection">
+            <h2>Дополнительные расходы</h2>
+
+            <table className="printTable">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Название</th>
+                  <th>Кол-во</th>
+                  <th>Ед.</th>
+                  <th>Цена</th>
+                  <th>Сумма</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {printableExpenseRows.length > 0 ? (
+                  printableExpenseRows.map((row, index) => (
+                    <tr key={row.id || index}>
+                      <td>{index + 1}</td>
+                      <td>{displayText(row.name)}</td>
+                      <td>{displayText(row.qty)}</td>
+                      <td>{displayText(row.unit)}</td>
+                      <td>{money(toNumber(row.price))}</td>
+                      <td>{money(rowSum(row))}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6">Дополнительные расходы не указаны</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="printTotalsWrap">
+            <div className="printTotals">
+              <div>
+                <span>Сумма работ</span>
+                <strong>{money(totals.worksTotal)}</strong>
+              </div>
+
+              <div>
+                <span>Дополнительные расходы</span>
+                <strong>{money(totals.expensesTotal)}</strong>
+              </div>
+
+              <div>
+                <span>Сумма до скидки</span>
+                <strong>{money(totals.baseTotal)}</strong>
+              </div>
+
+              <div>
+                <span>Скидка ({discountLabel()})</span>
+                <strong>- {money(totals.discountValue)}</strong>
+              </div>
+
+              <div>
+                <span>Сумма без ALV</span>
+                <strong>{money(totals.subtotalBeforeAlv)}</strong>
+              </div>
+
+              <div>
+                <span>ALV {displayText(alvPercent, "0")} %</span>
+                <strong>{money(totals.alvAmount)}</strong>
+              </div>
+
+              <div className="printFinalTotal">
+                <span>Итого к оплате</span>
+                <strong>{money(totals.finalTotal)}</strong>
+              </div>
+            </div>
+          </div>
+
+          {String(info.comment || "").trim() ? (
+            <div className="printSection">
+              <h2>Комментарий</h2>
+              <p className="printComment">{info.comment}</p>
+            </div>
+          ) : null}
+
+          <div className="printFooter">
+            <div>Solar E-Tron</div>
+            <div>
+              Подготовлено:{" "}
+              {displayText(
+                `${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() ||
+                  profile?.email
+              )}
+            </div>
+          </div>
+        </section>
       </main>
 
       <style jsx>{`
@@ -1034,6 +1225,10 @@ export default function ObjectCalculatorPage() {
           border-radius: 24px;
           background: rgba(255, 255, 255, 0.92);
           box-shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+        }
+
+        .printDocument {
+          display: none;
         }
 
         .topBar {
@@ -1298,10 +1493,6 @@ export default function ObjectCalculatorPage() {
           justify-content: flex-end;
         }
 
-        .printHeader {
-          display: none;
-        }
-
         .bottomActions {
           margin-top: 22px;
         }
@@ -1360,58 +1551,198 @@ export default function ObjectCalculatorPage() {
 
         @media print {
           .page {
+            min-height: auto;
             padding: 0;
             background: white;
+            color: #111;
+            font-family: Arial, sans-serif;
           }
 
-          .calculatorCard {
-            box-shadow: none;
-            border-radius: 0;
-            padding: 0;
-          }
-
+          .screenDocument,
           .noPrint {
             display: none !important;
           }
 
-          .printHeader {
+          .printDocument {
             display: block;
-            margin-bottom: 18px;
+            width: 100%;
+            background: white;
+            color: #111;
           }
 
-          .printHeader h2 {
-            font-size: 28px;
+          .printTop {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            align-items: flex-start;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #111;
+          }
+
+          .printCompany {
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: 0.2px;
+          }
+
+          .printSubtitle {
+            margin-top: 5px;
+            font-size: 15px;
+            color: #444;
+          }
+
+          .printMetaBox {
+            min-width: 220px;
+            display: grid;
+            gap: 7px;
+            font-size: 13px;
+          }
+
+          .printMetaBox div {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 4px;
+          }
+
+          .printMetaBox span {
+            color: #555;
+          }
+
+          .printInfoGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 16px;
+          }
+
+          .printInfoItem {
+            border: 1px solid #ddd;
+            padding: 9px 10px;
+          }
+
+          .printInfoItem span {
+            display: block;
+            font-size: 11px;
+            color: #555;
+            text-transform: uppercase;
             margin-bottom: 4px;
           }
 
-          .block {
+          .printInfoItem strong {
+            font-size: 14px;
+          }
+
+          .printWide {
+            grid-column: 1 / -1;
+          }
+
+          .printSection {
+            margin-top: 18px;
             break-inside: avoid;
+          }
+
+          .printSection h2 {
+            margin: 0 0 8px;
+            font-size: 17px;
+          }
+
+          .printTable {
+            width: 100%;
+            min-width: 0;
+            border-collapse: collapse;
+            font-size: 12px;
+          }
+
+          .printTable th,
+          .printTable td {
+            border: 1px solid #ccc;
+            padding: 6px 7px;
+            text-align: left;
+            vertical-align: top;
+          }
+
+          .printTable th {
+            background: #f1f1f1;
+            font-weight: 800;
+          }
+
+          .printTable th:nth-child(1),
+          .printTable td:nth-child(1) {
+            width: 36px;
+            text-align: center;
+          }
+
+          .printTable th:nth-child(3),
+          .printTable td:nth-child(3),
+          .printTable th:nth-child(4),
+          .printTable td:nth-child(4) {
+            width: 70px;
+          }
+
+          .printTable th:nth-child(5),
+          .printTable td:nth-child(5),
+          .printTable th:nth-child(6),
+          .printTable td:nth-child(6) {
+            width: 95px;
+            text-align: right;
+            white-space: nowrap;
+          }
+
+          .printTotalsWrap {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 18px;
+            break-inside: avoid;
+          }
+
+          .printTotals {
+            width: 360px;
+            border: 1px solid #ccc;
+          }
+
+          .printTotals div {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 7px 9px;
+            border-bottom: 1px solid #ddd;
+            font-size: 13px;
+          }
+
+          .printTotals div:last-child {
+            border-bottom: none;
+          }
+
+          .printTotals span {
+            color: #333;
+          }
+
+          .printFinalTotal {
+            background: #f1f1f1;
+            font-size: 16px !important;
+            font-weight: 800;
+          }
+
+          .printComment {
+            margin: 0;
+            padding: 10px;
             border: 1px solid #ddd;
-            background: white;
-            margin-top: 12px;
-            padding: 14px;
+            color: #111;
+            white-space: pre-wrap;
+            font-size: 13px;
           }
 
-          input,
-          textarea,
-          select {
-            border: none;
-            padding: 0;
-            border-radius: 0;
-            background: transparent;
-          }
-
-          textarea {
-            min-height: 60px;
-          }
-
-          th,
-          td {
-            padding: 7px;
-          }
-
-          .summaryGrid {
-            max-width: 100%;
+          .printFooter {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-top: 28px;
+            padding-top: 10px;
+            border-top: 1px solid #ccc;
+            font-size: 11px;
+            color: #555;
           }
 
           @page {
