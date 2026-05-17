@@ -171,6 +171,7 @@ export default function ObjectCalculatorPage() {
 
   const [openedCalculationId, setOpenedCalculationId] = useState("");
   const [savedCalculations, setSavedCalculations] = useState([]);
+  const [savedSearch, setSavedSearch] = useState("");
 
   const [info, setInfo] = useState({
     calculationNumber: "",
@@ -333,6 +334,26 @@ export default function ObjectCalculatorPage() {
   const printableExpenseRows = useMemo(() => {
     return expenseRows.filter(rowHasContent);
   }, [expenseRows]);
+
+  const filteredSavedCalculations = useMemo(() => {
+    const search = savedSearch.trim().toLowerCase();
+
+    if (!search) return savedCalculations;
+
+    return savedCalculations.filter((item) => {
+      const text = [
+        item.calculationNumber,
+        item.objectName,
+        item.objectAddress,
+        item.customerName,
+        item.calculationDate,
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+
+      return text.includes(search);
+    });
+  }, [savedCalculations, savedSearch]);
 
   function handleDiscountTypeChange(nextType) {
     if (nextType === discountType) return;
@@ -949,17 +970,31 @@ export default function ObjectCalculatorPage() {
           </section>
 
           <section className="block noPrint">
-            <div className="sectionTitle">
-              <h2>Сохранённые расчёты</h2>
+            <div className="compactSavedHeader">
+              <div>
+                <h2>Сохранённые расчёты</h2>
+                <p>
+                  Всего: {savedCalculations.length}. Показано: {filteredSavedCalculations.length}.
+                </p>
+              </div>
 
-              <button
-                type="button"
-                className="smallButton"
-                onClick={loadSavedCalculations}
-                disabled={loadingSaved}
-              >
-                Обновить
-              </button>
+              <div className="savedHeaderActions">
+                <input
+                  value={savedSearch}
+                  onChange={(e) => setSavedSearch(e.target.value)}
+                  placeholder="Поиск: номер, объект, заказчик"
+                  className="savedSearchInput"
+                />
+
+                <button
+                  type="button"
+                  className="smallButton"
+                  onClick={loadSavedCalculations}
+                  disabled={loadingSaved}
+                >
+                  Обновить
+                </button>
+              </div>
             </div>
 
             {loadingSaved ? <p>Загрузка сохранённых расчётов...</p> : null}
@@ -968,49 +1003,66 @@ export default function ObjectCalculatorPage() {
               <p>Сохранённых расчётов пока нет.</p>
             ) : null}
 
-            <div className="savedList">
-              {savedCalculations.map((item) => (
-                <div
-                  key={item.id}
-                  className={
-                    openedCalculationId === item.id
-                      ? "savedItem savedItemActive"
-                      : "savedItem"
-                  }
-                >
-                  <div className="savedMain">
-                    <strong>
-                      {item.calculationNumber
-                        ? `№ ${item.calculationNumber}`
-                        : "Без номера"}
-                    </strong>
+            {!loadingSaved && savedCalculations.length > 0 && filteredSavedCalculations.length === 0 ? (
+              <p>По этому поиску ничего не найдено.</p>
+            ) : null}
 
-                    <span>{item.objectName || "Без названия объекта"}</span>
-                    <span>{item.customerName || "Заказчик не указан"}</span>
-                    <span>Обновлено: {formatSavedDate(item.updatedAt)}</span>
-                    <span>Итого: {money(item?.totals?.finalTotal || 0)}</span>
-                  </div>
+            {filteredSavedCalculations.length > 0 ? (
+              <div className="compactSavedWrap">
+                <table className="compactSavedTable">
+                  <thead>
+                    <tr>
+                      <th>№</th>
+                      <th>Объект</th>
+                      <th>Заказчик</th>
+                      <th>Дата</th>
+                      <th>Итого</th>
+                      <th>Обновлено</th>
+                      <th>Действия</th>
+                    </tr>
+                  </thead>
 
-                  <div className="savedActions">
-                    <button
-                      type="button"
-                      className="secondaryButton"
-                      onClick={() => openSavedCalculation(item)}
-                    >
-                      Открыть
-                    </button>
+                  <tbody>
+                    {filteredSavedCalculations.map((item) => (
+                      <tr
+                        key={item.id}
+                        className={openedCalculationId === item.id ? "activeSavedRow" : ""}
+                      >
+                        <td>
+                          <strong>{item.calculationNumber || "—"}</strong>
+                        </td>
 
-                    <button
-                      type="button"
-                      className="deleteSavedButton"
-                      onClick={() => deleteSavedCalculation(item.id)}
-                    >
-                      Удалить
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                        <td>{item.objectName || "—"}</td>
+                        <td>{item.customerName || "—"}</td>
+                        <td>{item.calculationDate || "—"}</td>
+                        <td className="savedMoneyCell">{money(item?.totals?.finalTotal || 0)}</td>
+                        <td>{formatSavedDate(item.updatedAt)}</td>
+
+                        <td>
+                          <div className="savedTableActions">
+                            <button
+                              type="button"
+                              className="miniOpenButton"
+                              onClick={() => openSavedCalculation(item)}
+                            >
+                              Открыть
+                            </button>
+
+                            <button
+                              type="button"
+                              className="miniDeleteButton"
+                              onClick={() => deleteSavedCalculation(item.id)}
+                            >
+                              Удалить
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </section>
 
           <div className="bottomActions noPrint">
@@ -1271,7 +1323,8 @@ export default function ObjectCalculatorPage() {
 
         .topActions,
         .bottomActions,
-        .saveActions {
+        .saveActions,
+        .savedHeaderActions {
           display: flex;
           gap: 12px;
           flex-wrap: wrap;
@@ -1280,8 +1333,7 @@ export default function ObjectCalculatorPage() {
 
         .primaryButton,
         .secondaryButton,
-        .smallButton,
-        .deleteSavedButton {
+        .smallButton {
           border: none;
           border-radius: 14px;
           padding: 12px 18px;
@@ -1310,15 +1362,9 @@ export default function ObjectCalculatorPage() {
           padding: 10px 14px;
         }
 
-        .deleteSavedButton {
-          background: #ffebee;
-          color: #b71c1c;
-        }
-
         .primaryButton:disabled,
         .secondaryButton:disabled,
-        .smallButton:disabled,
-        .deleteSavedButton:disabled {
+        .smallButton:disabled {
           opacity: 0.55;
           cursor: not-allowed;
         }
@@ -1455,42 +1501,96 @@ export default function ObjectCalculatorPage() {
           color: #0d47a1;
         }
 
-        .savedList {
-          display: grid;
-          gap: 12px;
-        }
-
-        .savedItem {
+        .compactSavedHeader {
           display: flex;
           justify-content: space-between;
-          gap: 14px;
-          padding: 14px;
-          border-radius: 16px;
-          border: 1px solid #e0e0e0;
-          background: white;
+          gap: 16px;
+          align-items: flex-start;
+          margin-bottom: 14px;
         }
 
-        .savedItemActive {
-          border-color: #1976d2;
-          background: #e3f2fd;
+        .compactSavedHeader h2 {
+          margin-bottom: 4px;
         }
 
-        .savedMain {
-          display: grid;
-          gap: 4px;
-        }
-
-        .savedMain span {
-          color: #546e7a;
+        .compactSavedHeader p {
+          margin: 0;
           font-size: 14px;
         }
 
-        .savedActions {
+        .savedSearchInput {
+          min-width: 280px;
+          max-width: 360px;
+        }
+
+        .compactSavedWrap {
+          max-height: 360px;
+          overflow: auto;
+          border: 1px solid #e0e0e0;
+          border-radius: 16px;
+          background: white;
+        }
+
+        .compactSavedTable {
+          min-width: 900px;
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .compactSavedTable th {
+          position: sticky;
+          top: 0;
+          z-index: 1;
+          background: #f5f5f5;
+          font-size: 13px;
+          white-space: nowrap;
+        }
+
+        .compactSavedTable th,
+        .compactSavedTable td {
+          padding: 9px 10px;
+          border-bottom: 1px solid #eeeeee;
+          font-size: 13px;
+        }
+
+        .compactSavedTable tr:last-child td {
+          border-bottom: none;
+        }
+
+        .activeSavedRow {
+          background: #e3f2fd;
+        }
+
+        .savedMoneyCell {
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .savedTableActions {
           display: flex;
-          gap: 10px;
-          align-items: center;
-          flex-wrap: wrap;
+          gap: 8px;
           justify-content: flex-end;
+        }
+
+        .miniOpenButton,
+        .miniDeleteButton {
+          border: none;
+          border-radius: 10px;
+          padding: 8px 10px;
+          cursor: pointer;
+          font-weight: 700;
+          font-size: 12px;
+          white-space: nowrap;
+        }
+
+        .miniOpenButton {
+          background: #e3f2fd;
+          color: #0d47a1;
+        }
+
+        .miniDeleteButton {
+          background: #ffebee;
+          color: #b71c1c;
         }
 
         .bottomActions {
@@ -1512,13 +1612,14 @@ export default function ObjectCalculatorPage() {
 
           .topActions,
           .bottomActions,
-          .saveActions {
+          .saveActions,
+          .savedHeaderActions {
             justify-content: stretch;
           }
 
           .primaryButton,
           .secondaryButton,
-          .deleteSavedButton {
+          .smallButton {
             width: 100%;
           }
 
@@ -1540,8 +1641,13 @@ export default function ObjectCalculatorPage() {
             max-width: none;
           }
 
-          .savedItem {
+          .compactSavedHeader {
             flex-direction: column;
+          }
+
+          .savedSearchInput {
+            min-width: 0;
+            max-width: none;
           }
 
           h1 {
