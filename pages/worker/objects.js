@@ -1,10 +1,23 @@
 // pages/worker/objects.js
-import { useEffect, useState } from "react";
+
+import {
+  useEffect,
+  useState,
+} from "react";
+
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import { auth, db } from "../../lib/firebaseClient";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import {
+  auth,
+  db,
+} from "../../lib/firebaseClient";
+
+import {
+  onAuthStateChanged,
+  signOut,
+} from "firebase/auth";
+
 import {
   collection,
   doc,
@@ -17,18 +30,25 @@ import {
 import styles from "../../styles/worker.module.css";
 import typo from "../../styles/typography.module.css";
 
-function visibleForWorker(objectItem, uid) {
+function visibleForWorker(
+  objectItem,
+  uid
+) {
   const status = String(
     objectItem?.status || ""
   ).toLowerCase();
 
-  if (status === "active") return true;
+  if (status === "active") {
+    return true;
+  }
 
   if (status === "rework") {
     return Array.isArray(
       objectItem?.visibleToWorkerUids
     )
-      ? objectItem.visibleToWorkerUids.includes(uid)
+      ? objectItem.visibleToWorkerUids.includes(
+          uid
+        )
       : false;
   }
 
@@ -36,167 +56,242 @@ function visibleForWorker(objectItem, uid) {
 }
 
 function workTypeLabel(workType) {
-  return workType === "roof" ? "Крыша" : "Поле";
+  return workType === "roof"
+    ? "Крыша"
+    : "Поле";
 }
 
-export default function WorkerObjectsPage() {
-  const router = useRouter();
+function statusLabel(status) {
+  if (status === "active") {
+    return "Активный";
+  }
 
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
-  const [objects, setObjects] = useState([]);
+  if (status === "inactive") {
+    return "Неактивный";
+  }
 
-  useEffect(() => {
-    if (!auth || !db) return;
+  if (status === "rework") {
+    return "Доработка";
+  }
 
-    const unsub = onAuthStateChanged(
-      auth,
-      async (user) => {
-        setMsg("");
-        setLoading(true);
+  return status || "-";
+}
 
-        if (!user) {
-          router.replace("/login");
-          return;
-        }
-
-        try {
-          const userSnap = await getDoc(
-            doc(db, "Users", user.uid)
-          );
-
-          if (!userSnap.exists()) {
-            await signOut(auth);
-            router.replace("/login");
-            return;
-          }
-
-          const userData = userSnap.data() || {};
-
-          const role = String(
-            userData.role || ""
-          )
-            .trim()
-            .toLowerCase();
-
-          const status = String(
-            userData.status || ""
-          )
-            .trim()
-            .toLowerCase();
-
-          if (
-            role !== "worker" ||
-            status !== "active"
-          ) {
-            router.replace("/dashboard");
-            return;
-          }
-
-          const activeQ = query(
-            collection(db, "Objects"),
-            where("status", "==", "active")
-          );
-
-          const reworkQ = query(
-            collection(db, "Objects"),
-            where("status", "==", "rework"),
-            where(
-              "visibleToWorkerUids",
-              "array-contains",
-              user.uid
-            )
-          );
-
-          const [activeSnap, reworkSnap] =
-            await Promise.all([
-              getDocs(activeQ),
-              getDocs(reworkQ),
-            ]);
-
-          const map = new Map();
-
-          activeSnap.docs.forEach((item) => {
-            map.set(item.id, {
-              id: item.id,
-              ...item.data(),
-            });
-          });
-
-          reworkSnap.docs.forEach((item) => {
-            map.set(item.id, {
-              id: item.id,
-              ...item.data(),
-            });
-          });
-
-          const list = Array.from(map.values())
-            .filter((item) =>
-              visibleForWorker(item, user.uid)
-            )
-            .sort((a, b) => {
-  const statusPriority = {
+function statusPriority(status) {
+  const priorities = {
     active: 0,
     rework: 1,
     inactive: 2,
   };
 
-  const statusA = String(
-    a?.status || ""
-  ).toLowerCase();
-
-  const statusB = String(
-    b?.status || ""
-  ).toLowerCase();
-
-  const priorityA =
-    statusPriority[statusA] ?? 99;
-
-  const priorityB =
-    statusPriority[statusB] ?? 99;
-
-  if (priorityA !== priorityB) {
-    return priorityA - priorityB;
-  }
-
-  return String(
-    a?.name || a?.id || ""
-  ).localeCompare(
-    String(
-      b?.name || b?.id || ""
-    ),
-    "ru"
+  return (
+    priorities[
+      String(status || "").toLowerCase()
+    ] ?? 99
   );
-});
+}
 
-          setObjects(list);
-        } catch (error) {
-          console.error(
-            "Ошибка загрузки объектов работника:",
-            error
-          );
+export default function WorkerObjectsPage() {
+  const router = useRouter();
 
-          setMsg(
-            error?.message ||
-              "Ошибка загрузки объектов"
-          );
+  const [loading, setLoading] =
+    useState(true);
 
-          setObjects([]);
-        } finally {
-          setLoading(false);
+  const [msg, setMsg] =
+    useState("");
+
+  const [objects, setObjects] =
+    useState([]);
+
+  useEffect(() => {
+    if (!auth || !db) {
+      return;
+    }
+
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        async (user) => {
+          setMsg("");
+          setLoading(true);
+
+          if (!user) {
+            router.replace("/login");
+            return;
+          }
+
+          try {
+            const userSnapshot =
+              await getDoc(
+                doc(
+                  db,
+                  "Users",
+                  user.uid
+                )
+              );
+
+            if (!userSnapshot.exists()) {
+              await signOut(auth);
+              router.replace("/login");
+              return;
+            }
+
+            const userData =
+              userSnapshot.data() || {};
+
+            const role = String(
+              userData.role || ""
+            )
+              .trim()
+              .toLowerCase();
+
+            const status = String(
+              userData.status || ""
+            )
+              .trim()
+              .toLowerCase();
+
+            if (
+              role !== "worker" ||
+              status !== "active"
+            ) {
+              router.replace(
+                "/dashboard"
+              );
+              return;
+            }
+
+            const activeQuery = query(
+              collection(
+                db,
+                "Objects"
+              ),
+              where(
+                "status",
+                "==",
+                "active"
+              )
+            );
+
+            const reworkQuery = query(
+              collection(
+                db,
+                "Objects"
+              ),
+              where(
+                "status",
+                "==",
+                "rework"
+              ),
+              where(
+                "visibleToWorkerUids",
+                "array-contains",
+                user.uid
+              )
+            );
+
+            const [
+              activeSnapshot,
+              reworkSnapshot,
+            ] = await Promise.all([
+              getDocs(activeQuery),
+              getDocs(reworkQuery),
+            ]);
+
+            const objectsMap =
+              new Map();
+
+            activeSnapshot.docs.forEach(
+              (documentSnapshot) => {
+                objectsMap.set(
+                  documentSnapshot.id,
+                  {
+                    id:
+                      documentSnapshot.id,
+                    ...documentSnapshot.data(),
+                  }
+                );
+              }
+            );
+
+            reworkSnapshot.docs.forEach(
+              (documentSnapshot) => {
+                objectsMap.set(
+                  documentSnapshot.id,
+                  {
+                    id:
+                      documentSnapshot.id,
+                    ...documentSnapshot.data(),
+                  }
+                );
+              }
+            );
+
+            const list = Array.from(
+              objectsMap.values()
+            )
+              .filter((item) =>
+                visibleForWorker(
+                  item,
+                  user.uid
+                )
+              )
+              .sort((a, b) => {
+                const priorityA =
+                  statusPriority(
+                    a?.status
+                  );
+
+                const priorityB =
+                  statusPriority(
+                    b?.status
+                  );
+
+                if (
+                  priorityA !==
+                  priorityB
+                ) {
+                  return (
+                    priorityA -
+                    priorityB
+                  );
+                }
+
+                return String(
+                  a?.name ||
+                    a?.id ||
+                    ""
+                ).localeCompare(
+                  String(
+                    b?.name ||
+                      b?.id ||
+                      ""
+                  ),
+                  "ru"
+                );
+              });
+
+            setObjects(list);
+          } catch (error) {
+            console.error(
+              "Ошибка загрузки объектов работника:",
+              error
+            );
+
+            setMsg(
+              error?.message ||
+                "Ошибка загрузки объектов"
+            );
+
+            setObjects([]);
+          } finally {
+            setLoading(false);
+          }
         }
-      }
-    );
+      );
 
-    return () => unsub();
+    return () => unsubscribe();
   }, [router]);
-
-  function statusLabel(status) {
-    if (status === "active") return "Активный";
-    if (status === "inactive") return "Неактивный";
-    if (status === "rework") return "Доработка";
-    return status || "-";
-  }
 
   if (loading) {
     return (
@@ -223,8 +318,13 @@ export default function WorkerObjectsPage() {
               Объекты
             </div>
 
-            <div className={styles.subtitle}>
-              Доступные объекты работника
+            <div
+              className={
+                styles.subtitle
+              }
+            >
+              Доступные объекты
+              работника
             </div>
           </div>
         </div>
@@ -243,24 +343,50 @@ export default function WorkerObjectsPage() {
           }}
         >
           {objects.length === 0 ? (
-            <div style={{ opacity: 0.7 }}>
+            <div
+              style={{
+                opacity: 0.7,
+              }}
+            >
               Нет доступных объектов
             </div>
           ) : (
             objects.map((item) => {
               const workType =
-                item.workType === "roof"
+                item.workType ===
+                "roof"
                   ? "roof"
                   : "field";
 
               const roofFieldsCount =
-                Number(item.roofFieldCount) ||
-                (Array.isArray(item.roofFields)
-                  ? item.roofFields.length
+                Number(
+                  item.roofFieldCount
+                ) ||
+                (Array.isArray(
+                  item.roofFields
+                )
+                  ? item.roofFields
+                      .length
                   : 0);
 
               const totalPanels =
-                Number(item.mapPlanPanels) || 0;
+                Number(
+                  item.mapPlanPanels
+                ) || 0;
+
+              const latitude =
+                Number(item?.geo?.lat);
+
+              const longitude =
+                Number(item?.geo?.lng);
+
+              const hasCoordinates =
+                Number.isFinite(
+                  latitude
+                ) &&
+                Number.isFinite(
+                  longitude
+                );
 
               return (
                 <div
@@ -281,7 +407,8 @@ export default function WorkerObjectsPage() {
                     style={{
                       display: "flex",
                       flexWrap: "wrap",
-                      alignItems: "center",
+                      alignItems:
+                        "center",
                       gap: 8,
                     }}
                   >
@@ -289,64 +416,80 @@ export default function WorkerObjectsPage() {
                       style={{
                         fontWeight: 800,
                         fontSize: 18,
-                        color: "#1f2937",
+                        color:
+                          "#1f2937",
                       }}
                     >
-                      {item.name || item.id}
+                      {item.name ||
+                        item.id}
                     </div>
 
                     <span
                       style={{
-                        padding: "4px 8px",
-                        borderRadius: 999,
+                        padding:
+                          "4px 8px",
+                        borderRadius:
+                          999,
                         fontSize: 12,
                         fontWeight: 800,
+
                         background:
-                          workType === "roof"
+                          workType ===
+                          "roof"
                             ? "#e5eefc"
                             : "#e4f3e4",
+
                         color:
-                          workType === "roof"
+                          workType ===
+                          "roof"
                             ? "#294f7f"
                             : "#285d2c",
                       }}
                     >
-                      {workTypeLabel(workType)}
+                      {workTypeLabel(
+                        workType
+                      )}
                     </span>
                   </div>
 
                   <div>
                     <b>Статус:</b>{" "}
-                    {statusLabel(item.status)}
+                    {statusLabel(
+                      item.status
+                    )}
                   </div>
 
                   {workType === "roof" ? (
                     <div>
-                      <b>Поля крыши:</b>{" "}
+                      <b>
+                        Поля крыши:
+                      </b>{" "}
                       {roofFieldsCount},{" "}
                       <b>панелей:</b>{" "}
                       {totalPanels}
                     </div>
                   ) : (
                     <div>
-                      <b>Конструкций:</b>{" "}
+                      <b>
+                        Конструкций:
+                      </b>{" "}
                       {Number(
                         item.mapPlanConstructions
                       ) || 0}
-                      , <b>панелей:</b>{" "}
+                      ,{" "}
+                      <b>панелей:</b>{" "}
                       {totalPanels}
                     </div>
                   )}
 
                   <div>
                     <b>Координаты:</b>{" "}
-                    {item?.geo?.lat &&
-                    item?.geo?.lng
-                      ? `${Number(
-                          item.geo.lat
-                        ).toFixed(6)}, ${Number(
-                          item.geo.lng
-                        ).toFixed(6)}`
+                    {hasCoordinates
+                      ? `${latitude.toFixed(
+                          6
+                        )}, ${longitude.toFixed(
+                          6
+                        )}`
                       : "-"}
                   </div>
 
@@ -358,26 +501,8 @@ export default function WorkerObjectsPage() {
                       marginTop: 4,
                     }}
                   >
-                    <Link
-                      href={`/worker/object/${encodeURIComponent(
-                        item.id
-                      )}`}
-                      className={
-                        styles.actionButton
-                      }
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        maxWidth: 240,
-                        minHeight: 46,
-                        textAlign: "center",
-                      }}
-                    >
-                      Открыть объект
-                    </Link>
-
-                    {workType === "roof" ? (
+                    {workType ===
+                    "roof" ? (
                       <Link
                         href={`/roof-map/${encodeURIComponent(
                           item.id
@@ -388,19 +513,54 @@ export default function WorkerObjectsPage() {
                         style={{
                           display:
                             "inline-flex",
-                          alignItems: "center",
+
+                          alignItems:
+                            "center",
+
                           justifyContent:
                             "center",
-                          maxWidth: 240,
+
+                          maxWidth: 260,
                           minHeight: 46,
-                          textAlign: "center",
+
+                          textAlign:
+                            "center",
+
                           background:
                             "#355f8d",
                         }}
                       >
-                        Открыть карту крыши
+                        Открыть карту
+                        крыши
                       </Link>
-                    ) : null}
+                    ) : (
+                      <Link
+                        href={`/worker/object/${encodeURIComponent(
+                          item.id
+                        )}`}
+                        className={
+                          styles.actionButton
+                        }
+                        style={{
+                          display:
+                            "inline-flex",
+
+                          alignItems:
+                            "center",
+
+                          justifyContent:
+                            "center",
+
+                          maxWidth: 240,
+                          minHeight: 46,
+
+                          textAlign:
+                            "center",
+                        }}
+                      >
+                        Открыть объект
+                      </Link>
+                    )}
                   </div>
                 </div>
               );
