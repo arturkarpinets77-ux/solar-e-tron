@@ -144,9 +144,28 @@ export default function ManagerObjectsPage() {
       ...item.data(),
     }));
 
-    rows.sort((a, b) =>
-      String(a.name || a.id).localeCompare(String(b.name || b.id), "ru")
-    );
+    const statusPriority = {
+  active: 0,
+  rework: 1,
+  inactive: 2,
+};
+
+rows.sort((a, b) => {
+  const statusA = String(a.status || "").toLowerCase();
+  const statusB = String(b.status || "").toLowerCase();
+
+  const priorityA = statusPriority[statusA] ?? 99;
+  const priorityB = statusPriority[statusB] ?? 99;
+
+  if (priorityA !== priorityB) {
+    return priorityA - priorityB;
+  }
+
+  return String(a.name || a.id).localeCompare(
+    String(b.name || b.id),
+    "ru"
+  );
+});
 
     setObjects(rows);
   }
