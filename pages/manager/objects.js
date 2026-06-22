@@ -1250,22 +1250,24 @@ export default function ManagerObjectsPage() {
 
                       <div className="objectActions">
                         {itemWorkType === "field" ? (
-                          <Link
-                            href={`/object-map/${item.id}`}
-                            className="secondaryButton linkButton"
-                          >
-                            Открыть карту конструкций
-                          </Link>
-                        ) : (
-                          <button
-                            type="button"
-                            className="secondaryButton"
-                            disabled
-                            title="Рабочую карту крыши добавим следующим этапом"
-                          >
-                            Карта крыши — следующий этап
-                          </button>
-                        )}
+  <Link
+    href={`/object-map/${encodeURIComponent(
+      item.id
+    )}`}
+    className="secondaryButton linkButton"
+  >
+    Открыть карту конструкций
+  </Link>
+) : (
+  <Link
+    href={`/roof-map/${encodeURIComponent(
+      item.id
+    )}`}
+    className="secondaryButton linkButton"
+  >
+    Открыть карту крыши
+  </Link>
+)}
 
                         <button
                           type="button"
