@@ -1750,10 +1750,83 @@ export default function ManagerObjectsPage() {
         }
 
         .linkButton {
-          white-space: nowrap;
-        }
+  white-space: nowrap;
+}
 
-        @media (max-width: 850px) {
+/* Исправление белого текста из глобальных стилей */
+
+.page {
+  color: #1f1d18 !important;
+}
+
+.card,
+.formCard,
+.listCard,
+.sectionBlock,
+.objectRow,
+.summaryItem,
+.roofFieldRow {
+  color: #1f1d18 !important;
+}
+
+h1,
+h2,
+h3 {
+  color: #1f1d18 !important;
+}
+
+.cardHeader h2,
+.sectionTitleRow h3,
+.objectTitleRow h3 {
+  color: #1f1d18 !important;
+}
+
+.objectMain,
+.objectMain h3,
+.objectMain p {
+  color: #1f1d18 !important;
+}
+
+.summaryItem span {
+  color: #615c52 !important;
+}
+
+.summaryItem strong {
+  color: #151410 !important;
+  opacity: 1 !important;
+}
+
+.roofFieldIndex {
+  color: #304d72 !important;
+}
+
+.fieldGroup > span {
+  color: #39342a !important;
+}
+
+input,
+select {
+  color: #181713 !important;
+  -webkit-text-fill-color: #181713 !important;
+  opacity: 1 !important;
+}
+
+input::placeholder {
+  color: #89857c !important;
+  opacity: 1 !important;
+}
+
+.objectKey {
+  color: #655f52 !important;
+}
+
+.emptyText,
+.cardHeader p,
+.sectionTitleRow p {
+  color: #655f52 !important;
+}
+
+@media (max-width: 850px) {
           .threeColumns,
           .twoColumns,
           .choiceGrid {
