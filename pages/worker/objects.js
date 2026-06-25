@@ -494,74 +494,110 @@ export default function WorkerObjectsPage() {
                   </div>
 
                   <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 10,
-                      marginTop: 4,
-                    }}
-                  >
-                    {workType ===
-                    "roof" ? (
-                      <Link
-                        href={`/roof-map/${encodeURIComponent(
-                          item.id
-                        )}`}
-                        className={
-                          styles.actionButton
-                        }
-                        style={{
-                          display:
-                            "inline-flex",
+  style={{
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 10,
+    marginTop: 6,
+  }}
+>
+  {workType === "roof" ? (
+    <Link
+      href={`/roof-map/${encodeURIComponent(
+        item.id
+      )}`}
+      className={styles.actionButton}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 54,
+        textAlign: "center",
+        textDecoration: "none",
+        background: "#355f8d",
+      }}
+    >
+      Открыть карту крыши
+    </Link>
+  ) : (
+    <Link
+      href={`/worker/object/${encodeURIComponent(
+        item.id
+      )}`}
+      className={styles.actionButton}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 54,
+        textAlign: "center",
+        textDecoration: "none",
+      }}
+    >
+      Открыть объект
+    </Link>
+  )}
 
-                          alignItems:
-                            "center",
+  {hasCoordinates ? (
+    <a
+      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+        `${latitude},${longitude}`
+      )}`}
+      target="_blank"
+      rel="noreferrer"
+      className={styles.actionButton}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 54,
+        textAlign: "center",
+        textDecoration: "none",
+        background: "#ffffff",
+        color: "#1d4ed8",
+        border: "1px solid rgba(29,78,216,0.35)",
+      }}
+    >
+      Открыть в Google Maps
+    </a>
+  ) : (
+    <button
+      type="button"
+      disabled
+      style={{
+        minHeight: 54,
+        padding: "10px 14px",
+        borderRadius: 12,
+        border:
+          "1px solid rgba(15,23,42,0.12)",
+        background: "#e5e7eb",
+        color: "#6b7280",
+        font: "inherit",
+        fontWeight: 700,
+        cursor: "not-allowed",
+      }}
+    >
+      Координаты не указаны
+    </button>
+  )}
 
-                          justifyContent:
-                            "center",
-
-                          maxWidth: 260,
-                          minHeight: 46,
-
-                          textAlign:
-                            "center",
-
-                          background:
-                            "#355f8d",
-                        }}
-                      >
-                        Открыть карту
-                        крыши
-                      </Link>
-                    ) : (
-                      <Link
-                        href={`/worker/object/${encodeURIComponent(
-                          item.id
-                        )}`}
-                        className={
-                          styles.actionButton
-                        }
-                        style={{
-                          display:
-                            "inline-flex",
-
-                          alignItems:
-                            "center",
-
-                          justifyContent:
-                            "center",
-
-                          maxWidth: 240,
-                          minHeight: 46,
-
-                          textAlign:
-                            "center",
-                        }}
-                      >
-                        Открыть объект
-                      </Link>
-                    )}
-                  </div>
+  <Link
+    href="/worker/workday"
+    className={styles.actionButton}
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 54,
+      textAlign: "center",
+      textDecoration: "none",
+      background: "#2f7d4a",
+    }}
+  >
+    Перейти к отметке рабочего дня
+  </Link>
+</div>
                 </div>
               );
             })
