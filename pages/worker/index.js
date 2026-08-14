@@ -15,6 +15,68 @@ import {
 
 import s from "../../styles/worker.module.css";
 
+const WARNING_DAYS = 60;
+const DANGER_DAYS = 30;
+
+function dateFromValue(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const parsed = new Date(`${value}T23:59:59`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function daysUntilExpiry(value) {
+  const target = dateFromValue(value);
+  if (!target) return null;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetEnd = new Date(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate(),
+    23,
+    59,
+    59
+  );
+
+  return Math.ceil((targetEnd.getTime() - todayStart.getTime()) / 86400000) - 1;
+}
+
+function expiryStatus(value) {
+  const days = daysUntilExpiry(value);
+  if (days === null) return null;
+  if (days < 0) {
+    return {
+      tone: "red",
+      priority: 0,
+      days,
+      label: `Просрочен на ${Math.abs(days)} дн.`,
+    };
+  }
+  if (days <= DANGER_DAYS) {
+    return {
+      tone: "red",
+      priority: 1,
+      days,
+      label: days === 0 ? "Истекает сегодня" : `Осталось ${days} дн.`,
+    };
+  }
+  if (days <= WARNING_DAYS) {
+    return {
+      tone: "orange",
+      priority: 2,
+      days,
+      label: `Осталось ${days} дн.`,
+    };
+  }
+  return null;
+}
+
 export default function WorkerIndexPage() {
   const router = useRouter();
 
@@ -23,6 +85,7 @@ export default function WorkerIndexPage() {
 
   const [profile, setProfile] = useState(null);
   const [workerBrigades, setWorkerBrigades] = useState([]);
+  const [documentAlerts, setDocumentAlerts] = useState([]);
 
   useEffect(() => {
     if (!auth || !db) return;
@@ -70,7 +133,7 @@ export default function WorkerIndexPage() {
           status,
         });
 
-        await loadMyBrigades(user.uid);
+        await Promise.all([loadMyBrigades(user.uid), loadMyDocumentAlerts(user.uid)]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки кабинета работника");
       } finally {
@@ -90,15 +153,37 @@ export default function WorkerIndexPage() {
     const snap = await getDocs(q);
 
     const list = snap.docs
-      .map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }))
+      .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) =>
         String(a.name || "").localeCompare(String(b.name || ""), "ru")
       );
 
     setWorkerBrigades(list);
+  }
+
+  async function loadMyDocumentAlerts(uid) {
+    const snap = await getDocs(collection(db, "Users", uid, "Documents"));
+
+    const alerts = snap.docs
+      .map((documentSnapshot) => {
+        const data = documentSnapshot.data() || {};
+        const status = expiryStatus(data.expiresAt || data.expiryDate);
+
+        if (!status) return null;
+
+        return {
+          id: documentSnapshot.id,
+          title: data.title || data.fileName || "Документ",
+          ...status,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return a.days - b.days;
+      });
+
+    setDocumentAlerts(alerts);
   }
 
   function roleLabel(role) {
@@ -119,6 +204,9 @@ export default function WorkerIndexPage() {
       .join(" | ");
   }
 
+  const redAlertsCount = documentAlerts.filter((item) => item.tone === "red").length;
+  const orangeAlertsCount = documentAlerts.filter((item) => item.tone === "orange").length;
+
   if (loading) {
     return (
       <main className={s.page}>
@@ -136,6 +224,39 @@ export default function WorkerIndexPage() {
             <div className={s.subtitle}>Solar E-Tron</div>
           </div>
         </div>
+
+        {documentAlerts.length ? (
+          <Link
+            href="/worker/profile"
+            style={{
+              ...documentAlertStyle,
+              borderColor: redAlertsCount ? "#dc2626" : "#f59e0b",
+              background: redAlertsCount ? "#fef2f2" : "#fff7ed",
+              color: "#111827",
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 900 }}>
+              Проверь свои документы
+            </div>
+            <div>
+              Красных: <b>{redAlertsCount}</b>, оранжевых: <b>{orangeAlertsCount}</b>. Нажми, чтобы открыть профиль.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+              {documentAlerts.slice(0, 4).map((item) => (
+                <span
+                  key={item.id}
+                  style={{
+                    ...documentAlertPillStyle,
+                    background: item.tone === "red" ? "#fee2e2" : "#ffedd5",
+                    color: item.tone === "red" ? "#991b1b" : "#9a3412",
+                  }}
+                >
+                  {item.title} — {item.label}
+                </span>
+              ))}
+            </div>
+          </Link>
+        ) : null}
 
         <div style={infoBoxStyle}>
           <div style={infoRowStyle}>
@@ -187,19 +308,11 @@ export default function WorkerIndexPage() {
             Добавить фотоотчёт
           </Link>
 
-          <Link
-            href="/worker/construction-reports"
-            className={s.actionButton}
-            style={menuBtnStyle}
-          >
+          <Link href="/worker/construction-reports" className={s.actionButton} style={menuBtnStyle}>
             Отчёт по конструкциям
           </Link>
 
-          <Link
-            href="/worker/construction-reports-history"
-            className={s.actionButton}
-            style={menuBtnStyle}
-          >
+          <Link href="/worker/construction-reports-history" className={s.actionButton} style={menuBtnStyle}>
             Мои отчёты по конструкциям
           </Link>
 
@@ -215,11 +328,7 @@ export default function WorkerIndexPage() {
         {msg ? <div style={msgStyle}>{msg}</div> : null}
 
         <div style={footerStyle}>
-          <button
-            type="button"
-            onClick={() => signOut(auth)}
-            style={footerBtnStyle}
-          >
+          <button type="button" onClick={() => signOut(auth)} style={footerBtnStyle}>
             Выйти
           </button>
 
@@ -229,6 +338,24 @@ export default function WorkerIndexPage() {
     </main>
   );
 }
+
+const documentAlertStyle = {
+  display: "grid",
+  gap: 7,
+  marginTop: 14,
+  marginBottom: 14,
+  padding: 14,
+  borderRadius: 16,
+  border: "2px solid",
+  textDecoration: "none",
+};
+
+const documentAlertPillStyle = {
+  padding: "6px 9px",
+  borderRadius: 999,
+  fontSize: 13,
+  fontWeight: 800,
+};
 
 const infoBoxStyle = {
   padding: 16,
@@ -246,13 +373,9 @@ const infoRowStyle = {
   alignItems: "start",
 };
 
-const labelStyle = {
-  fontWeight: 700,
-};
+const labelStyle = { fontWeight: 700 };
 
-const valueStyle = {
-  wordBreak: "break-word",
-};
+const valueStyle = { wordBreak: "break-word" };
 
 const menuGridStyle = {
   display: "grid",
