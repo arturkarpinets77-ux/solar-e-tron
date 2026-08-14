@@ -204,8 +204,7 @@ export default function WorkerIndexPage() {
       .join(" | ");
   }
 
-  const redAlertsCount = documentAlerts.filter((item) => item.tone === "red").length;
-  const orangeAlertsCount = documentAlerts.filter((item) => item.tone === "orange").length;
+  const hasRedAlerts = documentAlerts.some((item) => item.tone === "red");
 
   if (loading) {
     return (
@@ -230,17 +229,15 @@ export default function WorkerIndexPage() {
             href="/worker/profile"
             style={{
               ...documentAlertStyle,
-              borderColor: redAlertsCount ? "#dc2626" : "#f59e0b",
-              background: redAlertsCount ? "#fef2f2" : "#fff7ed",
+              borderColor: hasRedAlerts ? "#dc2626" : "#f59e0b",
+              background: hasRedAlerts ? "#fef2f2" : "#fff7ed",
               color: "#111827",
             }}
           >
             <div style={{ fontSize: 17, fontWeight: 900 }}>
               Проверь свои документы
             </div>
-            <div>
-              Красных: <b>{redAlertsCount}</b>, оранжевых: <b>{orangeAlertsCount}</b>. Нажми, чтобы открыть профиль.
-            </div>
+            <div>Нажми, чтобы открыть профиль.</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
               {documentAlerts.slice(0, 4).map((item) => (
                 <span
