@@ -19,6 +19,10 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+const MIN_RADIUS_METERS = 10;
+const MAX_RADIUS_METERS = 10000;
+const DEFAULT_RADIUS_METERS = 200;
+
 function ClickHandler({ onPick }) {
   useMapEvents({
     click(e) {
@@ -39,6 +43,19 @@ function Recenter({ lat, lng, zoom = 14 }) {
   return null;
 }
 
+function normalizeRadius(value) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_RADIUS_METERS;
+  }
+
+  return Math.min(
+    MAX_RADIUS_METERS,
+    Math.max(MIN_RADIUS_METERS, Math.round(numericValue))
+  );
+}
+
 export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
   const [searchText, setSearchText] = useState("");
   const [searchMsg, setSearchMsg] = useState("");
@@ -46,12 +63,13 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
   const [zoom, setZoom] = useState(14);
   const [mapType, setMapType] = useState("satellite");
 
+  const safeRadiusMeters = normalizeRadius(radiusMeters);
+
   const tileConfig = useMemo(() => {
     if (mapType === "satellite") {
       return {
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attribution:
-          "Tiles &copy; Esri",
+        attribution: "Tiles &copy; Esri",
       };
     }
 
@@ -60,6 +78,16 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
       attribution: "&copy; OpenStreetMap contributors",
     };
   }, [mapType]);
+
+  function handleRadiusChange(value) {
+    const nextRadiusMeters = normalizeRadius(value);
+
+    onChange({
+      lat,
+      lng,
+      radiusMeters: nextRadiusMeters,
+    });
+  }
 
   async function handleSearch() {
     const q = searchText.trim();
@@ -101,7 +129,7 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
       onChange({
         lat: nextLat,
         lng: nextLng,
-        radiusMeters,
+        radiusMeters: safeRadiusMeters,
       });
     } catch (e) {
       setSearchMsg(e?.message || "Ошибка поиска");
@@ -131,6 +159,7 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
             borderRadius: 12,
             border: "1px solid rgba(120, 90, 20, 0.16)",
             background: "rgba(255,255,255,0.92)",
+            color: "#1f2937",
             outline: "none",
           }}
           onKeyDown={(e) => {
@@ -150,6 +179,7 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
             borderRadius: 12,
             border: "1px solid rgba(120, 90, 20, 0.16)",
             background: "rgba(255,255,255,0.92)",
+            color: "#1f2937",
             cursor: "pointer",
             whiteSpace: "nowrap",
             opacity: searching ? 0.6 : 1,
@@ -166,6 +196,7 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
             borderRadius: 12,
             border: "1px solid rgba(120, 90, 20, 0.16)",
             background: "rgba(255,255,255,0.92)",
+            color: "#1f2937",
             outline: "none",
           }}
         >
@@ -178,7 +209,88 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
         <div style={{ color: "#7f1d1d", fontSize: 14 }}>{searchMsg}</div>
       ) : null}
 
-      <div style={{ width: "100%", height: 420, borderRadius: 14, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "grid",
+          gap: 10,
+          padding: 12,
+          borderRadius: 14,
+          border: "1px solid rgba(120, 90, 20, 0.16)",
+          background: "rgba(255,255,255,0.92)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <label
+            htmlFor="object-radius-slider"
+            style={{ color: "#1f2937", fontWeight: 800 }}
+          >
+            Радиус объекта
+          </label>
+
+          <div style={{ color: "#1f2937", fontWeight: 900 }}>
+            {safeRadiusMeters} м
+          </div>
+        </div>
+
+        <input
+          id="object-radius-slider"
+          type="range"
+          min={MIN_RADIUS_METERS}
+          max={MAX_RADIUS_METERS}
+          step="10"
+          value={safeRadiusMeters}
+          onChange={(e) => handleRadiusChange(e.target.value)}
+          style={{ width: "100%" }}
+        />
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <input
+            type="number"
+            min={MIN_RADIUS_METERS}
+            max={MAX_RADIUS_METERS}
+            step="10"
+            value={safeRadiusMeters}
+            onChange={(e) => handleRadiusChange(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(120, 90, 20, 0.16)",
+              background: "#ffffff",
+              color: "#1f2937",
+              outline: "none",
+            }}
+          />
+
+          <span style={{ color: "#4b5563", fontWeight: 700 }}>
+            метров
+          </span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          width: "100%",
+          height: 420,
+          borderRadius: 14,
+          overflow: "hidden",
+        }}
+      >
         <MapContainer
           center={[lat, lng]}
           zoom={zoom}
@@ -187,14 +299,14 @@ export default function MapPicker({ lat, lng, radiusMeters, onChange }) {
           <TileLayer attribution={tileConfig.attribution} url={tileConfig.url} />
 
           <Marker position={[lat, lng]} />
-          <Circle center={[lat, lng]} radius={radiusMeters} />
+          <Circle center={[lat, lng]} radius={safeRadiusMeters} />
 
           <ClickHandler
             onPick={(pos) =>
               onChange({
                 lat: pos.lat,
                 lng: pos.lng,
-                radiusMeters,
+                radiusMeters: safeRadiusMeters,
               })
             }
           />
