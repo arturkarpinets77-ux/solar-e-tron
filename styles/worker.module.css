@@ -62,12 +62,30 @@
   align-items: baseline;
 }
 
+.infoRow {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 9px;
+}
+
+.infoRow:last-child {
+  margin-bottom: 0;
+}
+
 .label {
   opacity: 0.75;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .value {
-  font-weight: 600;
+  min-width: 0;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .divider {
@@ -142,19 +160,55 @@
 
 /* Адаптив */
 @media (max-width: 720px) {
+  .page {
+    padding: 14px;
+    align-items: flex-start;
+  }
+
   .card {
     padding: 18px;
   }
+
   .title {
     font-size: 34px;
   }
+
   .infoGrid {
     grid-template-columns: 140px 1fr;
   }
+
+  .infoRow {
+    grid-template-columns: 118px minmax(0, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .label,
+  .value {
+    font-size: 18px;
+  }
+
   .actionsGrid {
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 420px) {
+  .infoBox {
+    padding: 14px;
+  }
+
+  .infoRow {
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .label,
+  .value {
+    font-size: 17px;
+  }
+}
+
 /* === ФИКС ЧИТАЕМОСТИ ТЕКСТА НА "СТЕКЛЕ" === */
 .card {
   color: #0f172a; /* тёмный читаемый текст */
