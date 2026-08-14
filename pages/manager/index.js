@@ -297,8 +297,7 @@ export default function ManagerIndexPage() {
   const canStart = !todayWorkday || String(todayWorkday.status || "") !== "started";
   const canEnd = !!todayWorkday && String(todayWorkday.status || "") === "started";
 
-  const redAlertsCount = documentAlerts.filter((item) => item.tone === "red").length;
-  const orangeAlertsCount = documentAlerts.filter((item) => item.tone === "orange").length;
+  const hasRedAlerts = documentAlerts.some((item) => item.tone === "red");
   const hasDocumentAlerts = documentAlerts.length > 0;
 
   if (loading) {
@@ -324,17 +323,15 @@ export default function ManagerIndexPage() {
             href="/manager/documents"
             style={{
               ...documentAlertStyle,
-              borderColor: redAlertsCount ? "#dc2626" : "#f59e0b",
-              background: redAlertsCount ? "#fef2f2" : "#fff7ed",
+              borderColor: hasRedAlerts ? "#dc2626" : "#f59e0b",
+              background: hasRedAlerts ? "#fef2f2" : "#fff7ed",
               color: "#111827",
             }}
           >
             <div style={{ fontSize: 18, fontWeight: 900 }}>
               Документы работников требуют внимания
             </div>
-            <div>
-              Красных: <b>{redAlertsCount}</b>, оранжевых: <b>{orangeAlertsCount}</b>. Нажми, чтобы открыть список.
-            </div>
+            <div>Нажми, чтобы открыть список.</div>
             <div style={documentAlertListStyle}>
               {documentAlerts.slice(0, 5).map((item) => (
                 <span
