@@ -360,7 +360,13 @@ export default function WorkerProfilePage() {
 
     try {
       if (item.storagePath) {
-        await deleteObject(ref(storage, item.storagePath));
+        try {
+          await deleteObject(ref(storage, item.storagePath));
+        } catch (error) {
+          if (error?.code !== "storage/object-not-found") {
+            throw error;
+          }
+        }
       }
 
       await deleteDoc(doc(db, "Users", user.uid, "Documents", item.id));
@@ -380,7 +386,6 @@ export default function WorkerProfilePage() {
     .filter((item) => item.expiryStatus.tone === "red" || item.expiryStatus.tone === "orange");
 
   const redAlertsCount = documentAlerts.filter((item) => item.expiryStatus.tone === "red").length;
-  const orangeAlertsCount = documentAlerts.filter((item) => item.expiryStatus.tone === "orange").length;
 
   if (loading) {
     return (
@@ -420,7 +425,9 @@ export default function WorkerProfilePage() {
               Документы требуют внимания
             </div>
             <div>
-              Красных: <b>{redAlertsCount}</b>, оранжевых: <b>{orangeAlertsCount}</b>. Просроченные документы нужно удалить или заменить новым документом.
+              {redAlertsCount
+                ? "Просроченные документы нужно удалить или заменить новым документом."
+                : "Документы скоро закончатся. Проверь срок действия."}
             </div>
           </div>
         ) : null}
