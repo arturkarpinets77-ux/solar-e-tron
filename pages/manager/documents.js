@@ -166,6 +166,19 @@ function workerName(worker) {
   );
 }
 
+async function deleteStorageFileIfExists(storagePath) {
+  try {
+    await deleteObject(ref(storage, storagePath));
+    return { missing: false };
+  } catch (error) {
+    if (error?.code === "storage/object-not-found") {
+      return { missing: true };
+    }
+
+    throw error;
+  }
+}
+
 export default function ManagerDocumentsPage() {
   const router = useRouter();
 
@@ -344,13 +357,20 @@ export default function ManagerDocumentsPage() {
     if (!ok) return;
 
     try {
+      let storageFileMissing = false;
+
       if (item.storagePath) {
-        await deleteObject(ref(storage, item.storagePath));
+        const result = await deleteStorageFileIfExists(item.storagePath);
+        storageFileMissing = result.missing;
       }
 
       await deleteDoc(doc(db, "Users", selectedWorkerId, "Documents", item.id));
 
-      setMsg("Документ удалён.");
+      setMsg(
+        storageFileMissing
+          ? "Запись документа удалена. Файл в Storage уже отсутствовал."
+          : "Документ удалён."
+      );
       await Promise.all([loadDocuments(selectedWorkerId), loadExpiringDocuments()]);
     } catch (e) {
       setMsg(e?.message || "Ошибка удаления документа");
