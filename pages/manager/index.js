@@ -5,8 +5,10 @@ import { useRouter } from "next/router";
 import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -14,6 +16,9 @@ import {
 
 import styles from "../../styles/manager.module.css";
 import typo from "../../styles/typography.module.css";
+
+const WARNING_DAYS = 60;
+const DANGER_DAYS = 30;
 
 function getTodayKey() {
   const now = new Date();
@@ -30,6 +35,65 @@ function getNowTime() {
   return `${h}:${m}`;
 }
 
+function dateFromValue(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const parsed = new Date(`${value}T23:59:59`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function daysUntilExpiry(value) {
+  const target = dateFromValue(value);
+  if (!target) return null;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetEnd = new Date(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate(),
+    23,
+    59,
+    59
+  );
+
+  return Math.ceil((targetEnd.getTime() - todayStart.getTime()) / 86400000) - 1;
+}
+
+function expiryStatus(value) {
+  const days = daysUntilExpiry(value);
+  if (days === null) return null;
+  if (days < 0) {
+    return {
+      tone: "red",
+      priority: 0,
+      days,
+      label: `Просрочен на ${Math.abs(days)} дн.`,
+    };
+  }
+  if (days <= DANGER_DAYS) {
+    return {
+      tone: "red",
+      priority: 1,
+      days,
+      label: days === 0 ? "Истекает сегодня" : `Осталось ${days} дн.`,
+    };
+  }
+  if (days <= WARNING_DAYS) {
+    return {
+      tone: "orange",
+      priority: 2,
+      days,
+      label: `Осталось ${days} дн.`,
+    };
+  }
+  return null;
+}
+
 function roleLabel(role) {
   const value = String(role || "").toLowerCase();
   if (value === "admin") return "Администратор";
@@ -44,6 +108,15 @@ function dayStatusLabel(status) {
   return "Не начат";
 }
 
+function workerName(worker) {
+  return (
+    `${worker.firstName || ""} ${worker.lastName || ""}`.trim() ||
+    worker.email ||
+    worker.personalNumber ||
+    worker.id
+  );
+}
+
 export default function ManagerIndexPage() {
   const router = useRouter();
 
@@ -53,6 +126,7 @@ export default function ManagerIndexPage() {
   const [profile, setProfile] = useState(null);
   const [todayWorkday, setTodayWorkday] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [documentAlerts, setDocumentAlerts] = useState([]);
 
   const todayKey = useMemo(() => getTodayKey(), []);
 
@@ -102,7 +176,10 @@ export default function ManagerIndexPage() {
           status,
         });
 
-        await loadTodayWorkday(user.uid, todayKey);
+        await Promise.all([
+          loadTodayWorkday(user.uid, todayKey),
+          loadDocumentAlerts(),
+        ]);
       } catch (e) {
         setMsg(e?.message || "Ошибка загрузки кабинета директора");
       } finally {
@@ -123,6 +200,44 @@ export default function ManagerIndexPage() {
     }
 
     setTodayWorkday({ id: snap.id, ...snap.data() });
+  }
+
+  async function loadDocumentAlerts() {
+    const usersSnap = await getDocs(collection(db, "Users"));
+
+    const workers = usersSnap.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .filter((item) => String(item.role || "").toLowerCase() === "worker");
+
+    const alerts = [];
+
+    for (const worker of workers) {
+      const docsSnap = await getDocs(collection(db, "Users", worker.id, "Documents"));
+
+      docsSnap.docs.forEach((documentSnapshot) => {
+        const documentData = documentSnapshot.data() || {};
+        const expiryValue = documentData.expiresAt || documentData.expiryDate;
+        const status = expiryStatus(expiryValue);
+
+        if (!status) return;
+
+        alerts.push({
+          id: documentSnapshot.id,
+          workerId: worker.id,
+          workerName: workerName(worker),
+          title: documentData.title || documentData.fileName || "Документ",
+          expiryValue,
+          ...status,
+        });
+      });
+    }
+
+    alerts.sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.days - b.days;
+    });
+
+    setDocumentAlerts(alerts);
   }
 
   async function handleStartDay() {
@@ -182,6 +297,10 @@ export default function ManagerIndexPage() {
   const canStart = !todayWorkday || String(todayWorkday.status || "") !== "started";
   const canEnd = !!todayWorkday && String(todayWorkday.status || "") === "started";
 
+  const redAlertsCount = documentAlerts.filter((item) => item.tone === "red").length;
+  const orangeAlertsCount = documentAlerts.filter((item) => item.tone === "orange").length;
+  const hasDocumentAlerts = documentAlerts.length > 0;
+
   if (loading) {
     return (
       <main className={styles.page}>
@@ -199,6 +318,39 @@ export default function ManagerIndexPage() {
             <div className={styles.subtitle}>Solar E-Tron</div>
           </div>
         </div>
+
+        {hasDocumentAlerts ? (
+          <Link
+            href="/manager/documents"
+            style={{
+              ...documentAlertStyle,
+              borderColor: redAlertsCount ? "#dc2626" : "#f59e0b",
+              background: redAlertsCount ? "#fef2f2" : "#fff7ed",
+              color: "#111827",
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 900 }}>
+              Документы работников требуют внимания
+            </div>
+            <div>
+              Красных: <b>{redAlertsCount}</b>, оранжевых: <b>{orangeAlertsCount}</b>. Нажми, чтобы открыть список.
+            </div>
+            <div style={documentAlertListStyle}>
+              {documentAlerts.slice(0, 5).map((item) => (
+                <span
+                  key={`${item.workerId}-${item.id}`}
+                  style={{
+                    ...documentAlertPillStyle,
+                    background: item.tone === "red" ? "#fee2e2" : "#ffedd5",
+                    color: item.tone === "red" ? "#991b1b" : "#9a3412",
+                  }}
+                >
+                  {item.workerName}: {item.title} — {item.label}
+                </span>
+              ))}
+            </div>
+          </Link>
+        ) : null}
 
         <div className={styles.infoBox}>
           <div className={styles.infoRow}>
@@ -233,49 +385,39 @@ export default function ManagerIndexPage() {
 
           <div className={styles.infoRow}>
             <span className={styles.label}>Статус дня:</span>
-            <span className={styles.value}>
-              {dayStatusLabel(todayWorkday?.status)}
-            </span>
+            <span className={styles.value}>{dayStatusLabel(todayWorkday?.status)}</span>
           </div>
         </div>
 
         <div style={menuGridStyle}>
-  <Link href="/admin/users" className={styles.actionButton} style={menuBtnStyle}>
-    Пользователи
-  </Link>
+          <Link href="/admin/users" className={styles.actionButton} style={menuBtnStyle}>
+            Пользователи
+          </Link>
 
-  <Link href="/manager/objects" className={styles.actionButton} style={menuBtnStyle}>
-    Объекты
-  </Link>
+          <Link href="/manager/objects" className={styles.actionButton} style={menuBtnStyle}>
+            Объекты
+          </Link>
 
-  <Link href="/manager/brigades" className={styles.actionButton} style={menuBtnStyle}>
-    Бригады
-  </Link>
+          <Link href="/manager/brigades" className={styles.actionButton} style={menuBtnStyle}>
+            Бригады
+          </Link>
 
-  <Link
-    href="/manager/construction-reports"
-    className={styles.actionButton}
-    style={menuBtnStyle}
-  >
-    Отчёты по конструкциям
-  </Link>
+          <Link href="/manager/construction-reports" className={styles.actionButton} style={menuBtnStyle}>
+            Отчёты по конструкциям
+          </Link>
 
-  <Link href="/manager/documents" className={styles.actionButton} style={menuBtnStyle}>
-    Документы работников
-  </Link>
+          <Link href="/manager/documents" className={styles.actionButton} style={menuBtnStyle}>
+            Документы работников
+          </Link>
 
-  <Link href="/manager/workdays" className={styles.actionButton} style={menuBtnStyle}>
-    Рабочее время работников
-  </Link>
+          <Link href="/manager/workdays" className={styles.actionButton} style={menuBtnStyle}>
+            Рабочее время работников
+          </Link>
 
-  <Link
-    href="/manager/object-calculator"
-    className={styles.actionButton}
-    style={menuBtnStyle}
-  >
-    Калькулятор объекта
-  </Link>
-</div>
+          <Link href="/manager/object-calculator" className={styles.actionButton} style={menuBtnStyle}>
+            Калькулятор объекта
+          </Link>
+        </div>
 
         <div style={menuGridStyle}>
           <button
@@ -327,6 +469,31 @@ export default function ManagerIndexPage() {
     </main>
   );
 }
+
+const documentAlertStyle = {
+  display: "grid",
+  gap: 8,
+  marginTop: 14,
+  marginBottom: 14,
+  padding: 14,
+  borderRadius: 16,
+  border: "2px solid",
+  textDecoration: "none",
+};
+
+const documentAlertListStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+  marginTop: 4,
+};
+
+const documentAlertPillStyle = {
+  padding: "6px 9px",
+  borderRadius: 999,
+  fontSize: 13,
+  fontWeight: 800,
+};
 
 const menuGridStyle = {
   display: "grid",
