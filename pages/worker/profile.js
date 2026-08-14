@@ -6,7 +6,6 @@ import { auth, db } from "../../lib/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -19,7 +18,6 @@ import {
 
 import { getApps, getApp } from "firebase/app";
 import {
-  deleteObject,
   getDownloadURL,
   getStorage,
   ref,
@@ -199,7 +197,6 @@ export default function WorkerProfilePage() {
   const [expiryDate, setExpiryDate] = useState("");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [deletingDocId, setDeletingDocId] = useState("");
 
   const [docsList, setDocsList] = useState([]);
 
@@ -346,38 +343,6 @@ export default function WorkerProfilePage() {
     }
   }
 
-  async function handleDeleteDoc(item) {
-    if (!db || !storage || !user?.uid || !item?.id) return;
-
-    const ok = window.confirm(
-      `Удалить документ "${item.title || item.fileName || item.id}"?`
-    );
-
-    if (!ok) return;
-
-    setDeletingDocId(item.id);
-    setMsg("");
-
-    try {
-      if (item.storagePath) {
-        try {
-          await deleteObject(ref(storage, item.storagePath));
-        } catch (error) {
-          if (error?.code !== "storage/object-not-found") {
-            throw error;
-          }
-        }
-      }
-
-      await deleteDoc(doc(db, "Users", user.uid, "Documents", item.id));
-      setMsg("Документ удалён.");
-    } catch (e) {
-      setMsg(e?.message || "Ошибка удаления документа");
-    } finally {
-      setDeletingDocId("");
-    }
-  }
-
   const documentAlerts = docsList
     .map((item) => ({
       ...item,
@@ -426,7 +391,7 @@ export default function WorkerProfilePage() {
             </div>
             <div>
               {redAlertsCount
-                ? "Просроченные документы нужно удалить или заменить новым документом."
+                ? "Просроченные документы нужно заменить новым документом или обратиться к директору."
                 : "Документы скоро закончатся. Проверь срок действия."}
             </div>
           </div>
@@ -554,16 +519,6 @@ export default function WorkerProfilePage() {
                         <span>(ссылка ещё не готова)</span>
                       )}
                     </div>
-
-                    <button
-                      type="button"
-                      className={styles.btnSecondary}
-                      onClick={() => handleDeleteDoc(d)}
-                      disabled={deletingDocId === d.id}
-                      style={{ justifySelf: "start" }}
-                    >
-                      {deletingDocId === d.id ? "Удаление..." : "Удалить документ"}
-                    </button>
                   </div>
                 );
               })}
